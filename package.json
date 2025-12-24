@@ -22,9 +22,9 @@
       "name": "aragornii"
     }
   ],
-  "license": "GPL-3.0-only",
+  "license": "MIT",
   "dependencies": {
-    "form0": "*"
+    "form0-core": "file:../form0-core"
   },
   "devDependencies": {
     "ignore": "^7.0.5"

@@ -1,53 +1,91 @@
 import React from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { useFieldRegistry } from './field-registry-context.jsx';
 
-function formatDisplayValue(value, style) {
-  if (value == null) return '';
-  switch (style) {
-    case 'currency': return `$${parseFloat(value).toFixed(2)}`;
-    case 'date': return new Date(value).toLocaleDateString();
-    case 'numeric': return Number(value);
-    default: return String(value);
+const LABEL_SIDE = 'side';
+
+export function FieldRenderer({
+  field,
+  value,
+  onChange,
+  readOnly,
+  required,
+  error,
+  labelPosition = 'top',
+  labelWidthPercent = 30,
+  onKeyDown,
+  onFocus,
+  showError = true,
+}) {
+  const registry = useFieldRegistry();
+  const FieldComponent = registry.getFieldComponent(field.type);
+  const isLabelField = field.type === 'LabelField';
+  const effectiveLabelPosition = isLabelField ? 'top' : labelPosition;
+  const isLabelSide = effectiveLabelPosition === LABEL_SIDE;
+
+  if (!FieldComponent) {
+    return (
+      <View style={{ marginBottom: 16 }}>
+        <Text style={{ fontWeight: '600', marginBottom: 4 }}>
+          {field.label} {required ? '*' : ''}
+        </Text>
+        <Text style={{ color: 'tomato' }}>Unsupported field type: {field.type}</Text>
+      </View>
+    );
   }
-}
 
-export function FieldRenderer({ field, value, onChange, readOnly, required, error }) {
+  const label = field.label || field.data_name || '';
+  const labelNode = (
+    <Text style={{ fontWeight: '600' }}>
+      {label} {required ? '*' : ''}
+    </Text>
+  );
+
+  const inputProps = {
+    name: field.data_name,
+    readOnly,
+    required,
+    onFocus,
+  };
+
+  const fieldInput = isLabelField ? null : (
+    <FieldComponent
+      field={field}
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      readOnly={readOnly}
+      inputProps={inputProps}
+    />
+  );
+
+  const content = (
+    <>
+      {field.description ? (
+        <Text style={{ color: '#555', marginTop: 4 }}>{field.description}</Text>
+      ) : null}
+      {fieldInput}
+      {showError && error ? (
+        <Text style={{ color: 'tomato', marginTop: 4 }}>{error}</Text>
+      ) : null}
+    </>
+  );
+
+  if (isLabelSide) {
+    return (
+      <View style={{ marginBottom: 16, flexDirection: 'row' }}>
+        <View style={{ width: `${labelWidthPercent}%`, marginRight: 12 }}>
+          {labelNode}
+        </View>
+        <View style={{ flex: 1 }}>{content}</View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ marginBottom: 16 }}>
-      <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>
-        {field.label} {required ? '*' : ''}
-      </Text>
-
-      {field.type === 'TextField' && (
-        <TextInput
-          value={value ?? ''}
-          onChangeText={onChange}
-          editable={!readOnly}
-          style={{ borderWidth: 1, borderColor: '#ccc', borderRadius: 4, padding: 8 }}
-        />
-      )}
-
-      {field.type === 'NumericField' && (
-        <TextInput
-          value={value === null || value === undefined ? '' : String(value)}
-          onChangeText={(text) => {
-            if (field.format === 'integer' && (text.includes('.') || text.includes(','))) return;
-            const val = text === '' ? null : Number(text);
-            onChange(val);
-          }}
-          keyboardType="numeric"
-          editable={!readOnly}
-          style={{ borderWidth: 1, borderColor: '#ccc', borderRadius: 4, padding: 8 }}
-        />
-      )}
-
-      {field.type === 'CalculatedField' && (
-        <Text style={{ padding: 8, backgroundColor: '#f4f4f4', borderRadius: 4 }}>
-          {formatDisplayValue(value, field.display?.style)}
-        </Text>
-      )}
-
-      {error && <Text style={{ color: 'red', marginTop: 4 }}>{error}</Text>}
+      {labelNode}
+      {content}
     </View>
   );
 }
