@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
+import { useTheme } from '../theme-context.jsx';
 
 const OTHER_OPTION_VALUE = '__other__';
 
@@ -16,13 +17,8 @@ function mapChoice(field, value) {
   return value ? { value } : null;
 }
 
-export function SingleChoiceFieldComponent({
-  field,
-  value,
-  onChange,
-  readOnly,
-  inputProps = {},
-}) {
+export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, inputProps = {} }) {
+  const { theme } = useTheme();
   const { readOnly: _ignoredReadOnly, required: _ignoredRequired, ...restInputProps } = inputProps;
   const choices = Array.isArray(field?.choices) ? field.choices : [];
   const selectedChoice = value?.choice?.[0]?.value ?? '';
@@ -78,7 +74,7 @@ export function SingleChoiceFieldComponent({
                 width: 18,
                 height: 18,
                 borderWidth: 1,
-                borderColor: '#444',
+                borderColor: theme.color.inputBorder,
                 borderRadius: 9,
                 marginRight: 8,
                 alignItems: 'center',
@@ -91,12 +87,12 @@ export function SingleChoiceFieldComponent({
                     width: 10,
                     height: 10,
                     borderRadius: 5,
-                    backgroundColor: '#111',
+                    backgroundColor: theme.color.primary,
                   }}
                 />
               ) : null}
             </View>
-            <Text>{choice.label || choice.value}</Text>
+            <Text style={{ color: theme.color.foreground }}>{choice.label || choice.value}</Text>
           </Pressable>
         );
       })}
@@ -113,7 +109,7 @@ export function SingleChoiceFieldComponent({
                 width: 18,
                 height: 18,
                 borderWidth: 1,
-                borderColor: '#444',
+                borderColor: theme.color.inputBorder,
                 borderRadius: 9,
                 marginRight: 8,
                 alignItems: 'center',
@@ -126,23 +122,26 @@ export function SingleChoiceFieldComponent({
                     width: 10,
                     height: 10,
                     borderRadius: 5,
-                    backgroundColor: '#111',
+                    backgroundColor: theme.color.primary,
                   }}
                 />
               ) : null}
             </View>
-            <Text>Other</Text>
+            <Text style={{ color: theme.color.foreground }}>Other</Text>
           </Pressable>
           <TextInput
             value={otherValue || ''}
             onChangeText={handleOtherChange}
             editable={!readOnly}
             placeholder="Please specify..."
+            placeholderTextColor={theme.color.placeholder}
             style={{
               borderWidth: 1,
-              borderColor: '#ccc',
-              borderRadius: 4,
+              borderColor: theme.color.inputBorder,
+              borderRadius: theme.borderRadius.md,
               padding: 8,
+              backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
+              color: readOnly ? theme.color.inputDisabledFg : theme.color.foreground,
             }}
             {...restInputProps}
           />

@@ -12,6 +12,11 @@ export {
   getThemeByName,
 } from './theme.js';
 export {
+  ImageResolverProvider,
+  useImageResolver,
+  ImageResolverContext,
+} from './image-resolver-context.jsx';
+export {
   registerFieldComponent,
   unregisterFieldComponent,
   resetFieldComponents,

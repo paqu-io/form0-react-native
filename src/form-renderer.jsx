@@ -25,6 +25,7 @@ import {
 import { useRepeatableInstanceEngine } from './use-repeatable-instance.js';
 import { FormHeader } from './form-header.jsx';
 import { ThemeProvider, useTheme } from './theme-context.jsx';
+import { ImageResolverProvider } from './image-resolver-context.jsx';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
 const REPEATABLE_TYPE = 'RepeatableSection';
@@ -224,6 +225,7 @@ export function FormRenderer({
   showHeader = true,
   colorMode = 'light',
   customTheme = null,
+  imageResolver = null,
 }) {
   const mainScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
   const {
@@ -950,21 +952,23 @@ export function FormRenderer({
 
   return (
     <ThemeProvider colorMode={colorMode} customTheme={customTheme}>
-      <FieldRegistryProvider registry={registry} renderers={renderers}>
-        <FormRendererInner
-          showHeader={showHeader}
-          activeRepeatableScreen={activeRepeatableScreen}
-          formName={formName}
-          interactionMode={interactionMode}
-          requestCancel={typeof onRequestClose === 'function' ? requestCancel : undefined}
-          handleFormSubmit={hasSubmitHandler ? handleFormSubmit : undefined}
-          enterEditMode={enterEditMode}
-          canSubmit={canSubmit}
-          showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
-          renderRepeatableScreen={renderRepeatableScreen}
-          renderMainFormContent={renderMainFormContent}
-        />
-      </FieldRegistryProvider>
+      <ImageResolverProvider resolver={imageResolver}>
+        <FieldRegistryProvider registry={registry} renderers={renderers}>
+          <FormRendererInner
+            showHeader={showHeader}
+            activeRepeatableScreen={activeRepeatableScreen}
+            formName={formName}
+            interactionMode={interactionMode}
+            requestCancel={typeof onRequestClose === 'function' ? requestCancel : undefined}
+            handleFormSubmit={hasSubmitHandler ? handleFormSubmit : undefined}
+            enterEditMode={enterEditMode}
+            canSubmit={canSubmit}
+            showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
+            renderRepeatableScreen={renderRepeatableScreen}
+            renderMainFormContent={renderMainFormContent}
+          />
+        </FieldRegistryProvider>
+      </ImageResolverProvider>
     </ThemeProvider>
   );
 }

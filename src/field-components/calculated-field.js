@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
+import { useTheme } from '../theme-context.jsx';
 
 function formatDisplayValue(value, style) {
   if (value == null) return '';
@@ -16,15 +17,25 @@ function formatDisplayValue(value, style) {
 }
 
 export function CalculatedFieldComponent({ field, value }) {
+  const { theme } = useTheme();
+
   return (
-    <Text
+    <View
       style={{
         padding: 8,
-        backgroundColor: '#f4f4f4',
-        borderRadius: 4,
+        backgroundColor: theme.color.inputDisabledBg,
+        borderRadius: theme.borderRadius.md,
+        borderWidth: 1,
+        borderColor: theme.color.inputBorder,
       }}
     >
-      {formatDisplayValue(value, field?.display?.style)}
-    </Text>
+      <Text
+        style={{
+          color: theme.color.inputDisabledFg,
+        }}
+      >
+        {formatDisplayValue(value, field?.display?.style)}
+      </Text>
+    </View>
   );
 }
