@@ -1,4 +1,16 @@
 export { FormRenderer } from './form-renderer';
+export { FormHeader } from './form-header.jsx';
+export {
+  ThemeProvider,
+  useTheme,
+  ThemeContext,
+} from './theme-context.jsx';
+export {
+  lightTheme,
+  darkTheme,
+  mergeThemes,
+  getThemeByName,
+} from './theme.js';
 export {
   registerFieldComponent,
   unregisterFieldComponent,

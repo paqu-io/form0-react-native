@@ -14,6 +14,7 @@ import {
   UIManager,
   findNodeHandle,
   useWindowDimensions,
+  Alert,
 } from 'react-native';
 import { isFieldValueEmpty } from './helpers/is-field-value-empty.js';
 import {
@@ -22,6 +23,8 @@ import {
   createEmptyRepeatableInstance,
 } from './utils/repeatable-manager.js';
 import { useRepeatableInstanceEngine } from './use-repeatable-instance.js';
+import { FormHeader } from './form-header.jsx';
+import { ThemeProvider, useTheme } from './theme-context.jsx';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
 const REPEATABLE_TYPE = 'RepeatableSection';
@@ -30,7 +33,7 @@ const KEYBOARD_DISMISS_MODE = Platform.OS === 'ios' ? 'interactive' : 'on-drag';
 const DEFAULT_SCROLL_OFFSET = 24;
 
 const FormScrollView = React.forwardRef(function FormScrollView(
-  { children, contentContainerStyle, onScroll, onLayout, ...props },
+  { children, contentContainerStyle, onScroll, onLayout, style, ...props },
   ref
 ) {
   return (
@@ -43,6 +46,7 @@ const FormScrollView = React.forwardRef(function FormScrollView(
       onScroll={onScroll}
       onLayout={onLayout}
       scrollEventThrottle={16}
+      style={style}
       contentContainerStyle={[{ padding: 16, paddingBottom: 32 }, contentContainerStyle]}
       {...props}
     >
@@ -52,12 +56,12 @@ const FormScrollView = React.forwardRef(function FormScrollView(
 });
 
 const KeyboardFormScrollView = React.forwardRef(function KeyboardFormScrollView(
-  { children, contentContainerStyle, ...props },
+  { children, contentContainerStyle, style, ...props },
   ref
 ) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_BEHAVIOR}>
-      <FormScrollView ref={ref} contentContainerStyle={contentContainerStyle} {...props}>
+      <FormScrollView ref={ref} contentContainerStyle={contentContainerStyle} style={style} {...props}>
         {children}
       </FormScrollView>
     </KeyboardAvoidingView>
@@ -178,12 +182,36 @@ function useKeyboardAwareScroll({ scrollOffset = DEFAULT_SCROLL_OFFSET } = {}) {
   };
 }
 
+/**
+ * Simple deep equality check for change detection.
+ * Handles primitives, arrays, and plain objects.
+ */
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return a === b;
+
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => deepEqual(item, b[index]));
+  }
+
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+
+  return keysA.every((key) => deepEqual(a[key], b[key]));
+}
+
 export function FormRenderer({
   schema,
   initialValues = {},
   overrideValues,
   onSubmit,
-  mode = 'edit',
+  mode: modeProp = 'edit',
   keyboardScrollOffset = DEFAULT_SCROLL_OFFSET,
   debug = false,
   onSchemaReady,
@@ -191,6 +219,11 @@ export function FormRenderer({
   labelWidthPercent = 30,
   renderers,
   registry,
+  onRequestClose,
+  showPrimaryActionsInViewMode = true,
+  showHeader = true,
+  colorMode = 'light',
+  customTheme = null,
 }) {
   const mainScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
   const {
@@ -206,6 +239,32 @@ export function FormRenderer({
   const [submitCount, setSubmitCount] = useState(0);
   const [repeatableState, setRepeatableState] = useState({});
   const [repeatableStack, setRepeatableStack] = useState([]);
+
+  // Interaction mode state (allows switching between edit/readonly at runtime)
+  const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
+  const [interactionMode, setInteractionMode] = useState(normalizedInitialMode);
+
+  // Track changes for discard prompt
+  const initialValuesRef = useRef(initialValues);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Sync interaction mode when prop changes
+  useEffect(() => {
+    const nextMode = modeProp === 'readonly' ? 'readonly' : 'edit';
+    setInteractionMode(nextMode);
+  }, [modeProp]);
+
+  // Detect changes by comparing current values to initial values
+  useEffect(() => {
+    const changed = !deepEqual(values, initialValuesRef.current);
+    setHasChanges(changed);
+  }, [values]);
+
+  const enterEditMode = useCallback(() => {
+    setInteractionMode('edit');
+  }, []);
+
+  const isReadOnly = interactionMode === 'readonly';
 
   useEffect(() => {
     if (onSchemaReady) onSchemaReady(finalSchema);
@@ -446,10 +505,28 @@ export function FormRenderer({
         controller,
         parentPath = [],
         onFieldFocus,
+        theme,
       }
     ) =>
       items.map((field) => {
         if (!field) return null;
+
+        // Use a fallback theme if not provided (for backwards compatibility)
+        const t = theme || {
+          color: {
+            border: '#e5e7eb',
+            section: '#f9fafb',
+            foreground: '#111111',
+            description: '#6b7280',
+            buttonBg: '#ff007a',
+            buttonFg: '#ffffff',
+            buttonHoverBg: '#d6006b',
+            cancelBg: '#f3f4f6',
+            cancelFg: '#374151',
+            cancelHoverBg: '#e5e7eb',
+            primary: '#111111',
+          },
+        };
 
         if (field.type === REPEATABLE_TYPE) {
           const { repeatableKey, repInfo } = resolveRepeatableInfo(
@@ -466,12 +543,12 @@ export function FormRenderer({
             paddingVertical: 2,
             paddingHorizontal: 8,
             borderRadius: 999,
-            backgroundColor: count === 0 ? '#eef0f6' : '#e0e7ff',
+            backgroundColor: count === 0 ? t.color.cancelBg : t.color.bannerEditBg || '#e0e7ff',
             alignSelf: 'flex-start',
           };
           const countTextStyle = {
             fontSize: 12,
-            color: count === 0 ? '#6b7280' : '#1f2937',
+            color: count === 0 ? t.color.description : t.color.bannerEditFg || '#1f2937',
             fontWeight: '600',
           };
           return (
@@ -479,11 +556,11 @@ export function FormRenderer({
               key={field.key || field.data_name}
               style={{
                 borderWidth: 1,
-                borderColor: '#e1e1ea',
+                borderColor: t.color.border,
                 borderRadius: 14,
                 padding: 14,
                 marginBottom: 16,
-                backgroundColor: '#fff',
+                backgroundColor: t.color.section,
               }}
             >
               <View
@@ -494,7 +571,7 @@ export function FormRenderer({
                   marginBottom: 6,
                 }}
               >
-                <Text style={{ fontWeight: '700', fontSize: 16 }}>
+                <Text style={{ fontWeight: '700', fontSize: 16, color: t.color.foreground }}>
                   {field.label || 'Repeatable Section'}
                 </Text>
                 <View style={countPillStyle}>
@@ -502,7 +579,7 @@ export function FormRenderer({
                 </View>
               </View>
               {field.description ? (
-                <Text style={{ color: '#6b7280', marginBottom: 10 }}>
+                <Text style={{ color: t.color.description, marginBottom: 10 }}>
                   {field.description}
                 </Text>
               ) : null}
@@ -527,28 +604,24 @@ export function FormRenderer({
                       paddingVertical: 6,
                       paddingHorizontal: 12,
                       borderRadius: 999,
-                      backgroundColor: pressed ? '#1d4ed8' : '#2563eb',
+                      backgroundColor: pressed ? t.color.buttonHoverBg : t.color.buttonBg,
                       marginRight: 8,
                     })}
                   >
-                    <Text style={{ color: '#fff', fontWeight: '600' }}>Add entry</Text>
+                    <Text style={{ color: t.color.buttonFg, fontWeight: '600' }}>Add entry</Text>
                   </Pressable>
                 )}
                 <Pressable
-                  onPress={() =>
-                    openRepeatableList({ field, controller, parentPath })
-                  }
+                  onPress={() => openRepeatableList({ field, controller, parentPath })}
                   style={({ pressed }) => ({
                     alignSelf: 'flex-start',
                     paddingVertical: 6,
                     paddingHorizontal: 10,
                     borderRadius: 999,
-                    backgroundColor: pressed ? '#e6e7f0' : '#eef0f7',
+                    backgroundColor: pressed ? t.color.cancelHoverBg : t.color.cancelBg,
                   })}
                 >
-                  <Text style={{ color: '#374151' }}>
-                    {readOnly ? 'View' : 'Manage'}
-                  </Text>
+                  <Text style={{ color: t.color.cancelFg }}>{readOnly ? 'View' : 'Manage'}</Text>
                 </Pressable>
               </View>
             </View>
@@ -560,10 +633,14 @@ export function FormRenderer({
           return (
             <View key={sectionId} style={{ marginBottom: 16 }}>
               {field.label ? (
-                <Text style={{ fontWeight: '700', marginBottom: 8 }}>{field.label}</Text>
+                <Text style={{ fontWeight: '700', marginBottom: 8, color: t.color.sectionHeader || t.color.foreground }}>
+                  {field.label}
+                </Text>
               ) : null}
               {field.description ? (
-                <Text style={{ color: '#555', marginBottom: 8 }}>{field.description}</Text>
+                <Text style={{ color: t.color.description, marginBottom: 8 }}>
+                  {field.description}
+                </Text>
               ) : null}
               <View style={{ paddingLeft: 8 }}>
                 {renderElements(field.elements || [], {
@@ -574,6 +651,7 @@ export function FormRenderer({
                   controller,
                   parentPath,
                   onFieldFocus,
+                  theme,
                 })}
               </View>
             </View>
@@ -615,17 +693,44 @@ export function FormRenderer({
           />
         );
       }),
-    [
-      labelPosition,
-      labelWidthPercent,
-      openRepeatableEditor,
-      openRepeatableList,
-      resolveRepeatableInfo,
-    ]
+    [labelPosition, labelWidthPercent, openRepeatableEditor, openRepeatableList, resolveRepeatableInfo]
   );
 
-  const canSubmit = mode !== 'readonly' && typeof onSubmit === 'function';
+  const canSubmit = !isReadOnly && typeof onSubmit === 'function';
+  const hasSubmitHandler = typeof onSubmit === 'function';
   const activeRepeatableScreen = repeatableStack[repeatableStack.length - 1] || null;
+
+  // Request cancel with discard confirmation if there are changes
+  const requestCancel = useCallback(() => {
+    if (typeof onRequestClose !== 'function') {
+      return;
+    }
+
+    if (hasChanges) {
+      Alert.alert(
+        'Discard changes?',
+        'You have unsaved changes that will be lost.',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => onRequestClose({ reason: 'cancel' }),
+          },
+        ]
+      );
+    } else {
+      onRequestClose({ reason: 'cancel' });
+    }
+  }, [hasChanges, onRequestClose]);
+
+  // Handle form submission
+  const handleFormSubmit = useCallback(() => {
+    setSubmitCount((count) => count + 1);
+    if (onSubmit) {
+      onSubmit(submit(), { repeatable: cloneDeep(repeatableState) });
+    }
+  }, [onSubmit, submit, repeatableState]);
 
   const getRepeatableEntryTitle = (field, instance, index) => {
     const titleFieldDataName = field?.title_field?.data_name;
@@ -758,90 +863,148 @@ export function FormRenderer({
     [popRepeatableScreen]
   );
 
+  const formName = finalSchema?.form?.name || null;
+
+  // Render the main form content (with themed background)
+  const renderMainFormContent = (theme) => (
+    <KeyboardFormScrollView
+      ref={mainScroll.scrollRef}
+      onScroll={mainScroll.onScroll}
+      onLayout={mainScroll.onLayout}
+      contentContainerStyle={{ padding: 16 }}
+      style={{ backgroundColor: theme.color.background }}
+    >
+      {renderElements(elements, {
+        state: { values, visible, required, read_only, errors },
+        setValue,
+        readOnly: isReadOnly,
+        submitCount,
+        controller: formRepeatableController,
+        parentPath: [],
+        onFieldFocus: mainScroll.onFieldFocus,
+        theme,
+      })}
+    </KeyboardFormScrollView>
+  );
+
+  // Render repeatable screens (list or editor)
+  const renderRepeatableScreen = (theme) => {
+    if (activeRepeatableScreen.type === 'list') {
+      return (
+        <RepeatableListScreen
+          screen={activeRepeatableScreen}
+          onBack={popRepeatableScreen}
+          onEdit={(instanceId) =>
+            openRepeatableEditor({
+              ...activeRepeatableScreen,
+              instanceId,
+              mode: 'edit',
+            })
+          }
+          onAdd={() => {
+            const draft = createEmptyRepeatableInstance(activeRepeatableScreen.repInfo);
+            openRepeatableEditor({
+              ...activeRepeatableScreen,
+              instanceId: draft.id,
+              mode: 'create',
+              draft,
+            });
+          }}
+          onRemove={(instanceId) =>
+            activeRepeatableScreen.controller?.setInstances(
+              activeRepeatableScreen.repeatableKey,
+              activeRepeatableScreen.controller
+                ?.getInstances(
+                  activeRepeatableScreen.repeatableKey,
+                  activeRepeatableScreen.parentPath
+                )
+                .filter((instance) => instance.id !== instanceId),
+              activeRepeatableScreen.parentPath
+            )
+          }
+          getEntryTitle={getRepeatableEntryTitle}
+          getEntrySummary={(instance) =>
+            buildRepeatableSummaryLines(activeRepeatableScreen.repInfo, instance)
+          }
+          readOnly={isReadOnly}
+          theme={theme}
+        />
+      );
+    }
+
+    return (
+      <RepeatableEditorScreen
+        screen={activeRepeatableScreen}
+        schema={finalSchema}
+        onBack={popRepeatableScreen}
+        onSave={handleRepeatableSave}
+        renderElements={renderElements}
+        labelPosition={labelPosition}
+        labelWidthPercent={labelWidthPercent}
+        readOnly={isReadOnly}
+        keyboardScrollOffset={keyboardScrollOffset}
+        theme={theme}
+      />
+    );
+  };
+
   return (
-    <FieldRegistryProvider registry={registry} renderers={renderers}>
-      {activeRepeatableScreen ? (
-        activeRepeatableScreen.type === 'list' ? (
-          <RepeatableListScreen
-            screen={activeRepeatableScreen}
-            onBack={popRepeatableScreen}
-            onEdit={(instanceId) =>
-              openRepeatableEditor({
-                ...activeRepeatableScreen,
-                instanceId,
-                mode: 'edit',
-              })
-            }
-            onAdd={() => {
-              const draft = createEmptyRepeatableInstance(activeRepeatableScreen.repInfo);
-              openRepeatableEditor({
-                ...activeRepeatableScreen,
-                instanceId: draft.id,
-                mode: 'create',
-                draft,
-              });
-            }}
-            onRemove={(instanceId) =>
-              activeRepeatableScreen.controller?.setInstances(
-                activeRepeatableScreen.repeatableKey,
-                activeRepeatableScreen.controller
-                  ?.getInstances(
-                    activeRepeatableScreen.repeatableKey,
-                    activeRepeatableScreen.parentPath
-                  )
-                  .filter((instance) => instance.id !== instanceId),
-                activeRepeatableScreen.parentPath
-              )
-            }
-            getEntryTitle={getRepeatableEntryTitle}
-            getEntrySummary={(instance) =>
-              buildRepeatableSummaryLines(activeRepeatableScreen.repInfo, instance)
-            }
-            readOnly={mode === 'readonly'}
-          />
-        ) : (
-          <RepeatableEditorScreen
-            screen={activeRepeatableScreen}
-            schema={finalSchema}
-            onBack={popRepeatableScreen}
-            onSave={handleRepeatableSave}
-            renderElements={renderElements}
-            labelPosition={labelPosition}
-            labelWidthPercent={labelWidthPercent}
-            readOnly={mode === 'readonly'}
-            keyboardScrollOffset={keyboardScrollOffset}
-          />
-        )
-      ) : (
-        <KeyboardFormScrollView
-          ref={mainScroll.scrollRef}
-          onScroll={mainScroll.onScroll}
-          onLayout={mainScroll.onLayout}
-          contentContainerStyle={{ padding: 16 }}
-        >
-          {renderElements(elements, {
-            state: { values, visible, required, read_only, errors },
-            setValue,
-            readOnly: mode === 'readonly',
-            submitCount,
-            controller: formRepeatableController,
-            parentPath: [],
-            onFieldFocus: mainScroll.onFieldFocus,
-          })}
-          {canSubmit && (
-            <View style={{ marginTop: 24 }}>
-              <Button
-                title="Submit"
-                onPress={() => {
-                  setSubmitCount((count) => count + 1);
-                  onSubmit?.(submit(), { repeatable: cloneDeep(repeatableState) });
-                }}
-              />
-            </View>
-          )}
-        </KeyboardFormScrollView>
+    <ThemeProvider colorMode={colorMode} customTheme={customTheme}>
+      <FieldRegistryProvider registry={registry} renderers={renderers}>
+        <FormRendererInner
+          showHeader={showHeader}
+          activeRepeatableScreen={activeRepeatableScreen}
+          formName={formName}
+          interactionMode={interactionMode}
+          requestCancel={typeof onRequestClose === 'function' ? requestCancel : undefined}
+          handleFormSubmit={hasSubmitHandler ? handleFormSubmit : undefined}
+          enterEditMode={enterEditMode}
+          canSubmit={canSubmit}
+          showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
+          renderRepeatableScreen={renderRepeatableScreen}
+          renderMainFormContent={renderMainFormContent}
+        />
+      </FieldRegistryProvider>
+    </ThemeProvider>
+  );
+}
+
+/**
+ * Inner component that has access to theme context
+ */
+function FormRendererInner({
+  showHeader,
+  activeRepeatableScreen,
+  formName,
+  interactionMode,
+  requestCancel,
+  handleFormSubmit,
+  enterEditMode,
+  canSubmit,
+  showPrimaryActionsInViewMode,
+  renderRepeatableScreen,
+  renderMainFormContent,
+}) {
+  const { theme } = useTheme();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
+      {/* Fixed Header - always visible at top */}
+      {showHeader && !activeRepeatableScreen && (
+        <FormHeader
+          formName={formName}
+          mode={interactionMode}
+          onCancel={requestCancel}
+          onSubmit={handleFormSubmit}
+          onEnterEditMode={enterEditMode}
+          canSubmit={canSubmit}
+          showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
+        />
       )}
-    </FieldRegistryProvider>
+
+      {/* Form Content */}
+      {activeRepeatableScreen ? renderRepeatableScreen(theme) : renderMainFormContent(theme)}
+    </View>
   );
 }
 
@@ -854,55 +1017,61 @@ function RepeatableListScreen({
   getEntryTitle,
   getEntrySummary,
   readOnly,
+  theme,
 }) {
   const instances =
     screen.controller?.getInstances(screen.repeatableKey, screen.parentPath) || [];
   const label = screen.field?.label || 'Repeatable Section';
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       <View style={{ padding: 16 }}>
         <Pressable onPress={onBack} style={{ marginBottom: 8 }}>
-          <Text style={{ color: '#2563eb' }}>← Back</Text>
+          <Text style={{ color: theme.color.primary }}>← Back</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', flex: 1 }}>{label}</Text>
+          <Text style={{ fontSize: 20, fontWeight: '700', flex: 1, color: theme.color.foreground }}>
+            {label}
+          </Text>
           {readOnly ? (
             <View
               style={{
                 paddingVertical: 2,
                 paddingHorizontal: 8,
                 borderRadius: 999,
-                backgroundColor: '#fef3c7',
+                backgroundColor: theme.color.bannerViewBg,
               }}
             >
-              <Text style={{ fontSize: 12, color: '#92400e', fontWeight: '600' }}>
+              <Text style={{ fontSize: 12, color: theme.color.bannerViewFg, fontWeight: '600' }}>
                 View
               </Text>
             </View>
           ) : null}
         </View>
-        <Text style={{ color: '#666', marginTop: 4 }}>
+        <Text style={{ color: theme.color.description, marginTop: 4 }}>
           {instances.length} item{instances.length === 1 ? '' : 's'}
         </Text>
       </View>
-      <FormScrollView contentContainerStyle={{ paddingHorizontal: 16 }}>
+      <FormScrollView
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        style={{ backgroundColor: theme.color.background }}
+      >
         {instances.length === 0 ? (
-          <Text style={{ color: '#666' }}>No entries yet.</Text>
+          <Text style={{ color: theme.color.description }}>No entries yet.</Text>
         ) : (
           instances.map((instance, index) => (
             <View
               key={instance.id}
               style={{
                 borderWidth: 1,
-                borderColor: '#e1e1ea',
+                borderColor: theme.color.border,
                 borderRadius: 14,
                 padding: 14,
                 marginBottom: 12,
-                backgroundColor: '#fff',
+                backgroundColor: theme.color.section,
               }}
             >
-              <Text style={{ fontWeight: '600', marginBottom: 8 }}>
+              <Text style={{ fontWeight: '600', marginBottom: 8, color: theme.color.foreground }}>
                 {getEntryTitle(screen.field, instance, index)}
               </Text>
               {getEntrySummary ? (
@@ -910,7 +1079,7 @@ function RepeatableListScreen({
                   const summary = getEntrySummary(instance);
                   if (!summary || summary.length === 0) {
                     return (
-                      <Text style={{ color: '#9ca3af', marginBottom: 10 }}>
+                      <Text style={{ color: theme.color.placeholder, marginBottom: 10 }}>
                         No details yet.
                       </Text>
                     );
@@ -920,7 +1089,7 @@ function RepeatableListScreen({
                       {summary.map((line, idx) => (
                         <Text
                           key={`${instance.id}-summary-${idx}`}
-                          style={{ color: '#4b5563' }}
+                          style={{ color: theme.color.description }}
                           numberOfLines={1}
                         >
                           {line.label}: {line.value}
@@ -937,11 +1106,11 @@ function RepeatableListScreen({
                     paddingVertical: 6,
                     paddingHorizontal: 12,
                     borderRadius: 999,
-                    backgroundColor: pressed ? '#e6e7f0' : '#eef0f7',
+                    backgroundColor: pressed ? theme.color.cancelHoverBg : theme.color.cancelBg,
                     marginRight: 8,
                   })}
                 >
-                  <Text style={{ color: '#374151' }}>
+                  <Text style={{ color: theme.color.cancelFg }}>
                     {readOnly ? 'View' : 'Edit'}
                   </Text>
                 </Pressable>
@@ -955,7 +1124,7 @@ function RepeatableListScreen({
                       backgroundColor: pressed ? '#fce8e8' : '#fdecec',
                     })}
                   >
-                    <Text style={{ color: '#b91c1c' }}>Delete</Text>
+                    <Text style={{ color: theme.color.error }}>Delete</Text>
                   </Pressable>
                 )}
               </View>
@@ -964,8 +1133,19 @@ function RepeatableListScreen({
         )}
       </FormScrollView>
       {!readOnly && (
-        <View style={{ padding: 16 }}>
-          <Button title="Add entry" onPress={onAdd} />
+        <View style={{ padding: 16, backgroundColor: theme.color.background }}>
+          <Pressable
+            onPress={onAdd}
+            style={({ pressed }) => ({
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              borderRadius: 8,
+              backgroundColor: pressed ? theme.color.buttonHoverBg : theme.color.buttonBg,
+              alignItems: 'center',
+            })}
+          >
+            <Text style={{ color: theme.color.buttonFg, fontWeight: '600' }}>Add entry</Text>
+          </Pressable>
         </View>
       )}
     </View>
@@ -982,6 +1162,7 @@ function RepeatableEditorScreen({
   labelWidthPercent,
   readOnly,
   keyboardScrollOffset,
+  theme,
 }) {
   const editorScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
   const initialInstance =
@@ -992,8 +1173,7 @@ function RepeatableEditorScreen({
           screen.parentPath
         )
       : screen.draft;
-  const baseValues =
-    screen.controller?.buildParentValues?.(screen.parentPath) || {};
+  const baseValues = screen.controller?.buildParentValues?.(screen.parentPath) || {};
   const {
     values,
     visible,
@@ -1063,13 +1243,13 @@ function RepeatableEditorScreen({
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       <View style={{ padding: 16, paddingBottom: 0 }}>
         <Pressable onPress={onBack} style={{ marginBottom: 8 }}>
-          <Text style={{ color: '#2563eb' }}>← Back</Text>
+          <Text style={{ color: theme.color.primary }}>← Back</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', flex: 1 }}>
+          <Text style={{ fontSize: 20, fontWeight: '700', flex: 1, color: theme.color.foreground }}>
             {screen.field?.label || 'Entry'}
           </Text>
           {readOnly ? (
@@ -1078,10 +1258,10 @@ function RepeatableEditorScreen({
                 paddingVertical: 2,
                 paddingHorizontal: 8,
                 borderRadius: 999,
-                backgroundColor: '#fef3c7',
+                backgroundColor: theme.color.bannerViewBg,
               }}
             >
-              <Text style={{ fontSize: 12, color: '#92400e', fontWeight: '600' }}>
+              <Text style={{ fontSize: 12, color: theme.color.bannerViewFg, fontWeight: '600' }}>
                 View
               </Text>
             </View>
@@ -1093,6 +1273,7 @@ function RepeatableEditorScreen({
         onScroll={editorScroll.onScroll}
         onLayout={editorScroll.onLayout}
         contentContainerStyle={{ padding: 16 }}
+        style={{ backgroundColor: theme.color.background }}
       >
         {renderElements(screen.repInfo?.field?.elements || [], {
           state: { values, visible, required, read_only, errors },
@@ -1102,10 +1283,22 @@ function RepeatableEditorScreen({
           controller,
           parentPath: contextPath,
           onFieldFocus: editorScroll.onFieldFocus,
+          theme,
         })}
         {!readOnly && (
           <View style={{ marginTop: 16 }}>
-            <Button title="Save entry" onPress={handleSave} />
+            <Pressable
+              onPress={handleSave}
+              style={({ pressed }) => ({
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                backgroundColor: pressed ? theme.color.buttonHoverBg : theme.color.buttonBg,
+                alignItems: 'center',
+              })}
+            >
+              <Text style={{ color: theme.color.buttonFg, fontWeight: '600' }}>Save entry</Text>
+            </Pressable>
           </View>
         )}
       </KeyboardFormScrollView>

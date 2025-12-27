@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useFieldRegistry } from './field-registry-context.jsx';
+import { useTheme } from './theme-context.jsx';
 
 const LABEL_SIDE = 'side';
 
@@ -18,6 +19,8 @@ export function FieldRenderer({
   showError = true,
 }) {
   const registry = useFieldRegistry();
+  const { theme } = useTheme();
+
   const FieldComponent = registry.getFieldComponent(field.type);
   const isLabelField = field.type === 'LabelField';
   const effectiveLabelPosition = isLabelField ? 'top' : labelPosition;
@@ -26,17 +29,17 @@ export function FieldRenderer({
   if (!FieldComponent) {
     return (
       <View style={{ marginBottom: 16 }}>
-        <Text style={{ fontWeight: '600', marginBottom: 4 }}>
+        <Text style={{ fontWeight: '600', marginBottom: 4, color: theme.color.label }}>
           {field.label} {required ? '*' : ''}
         </Text>
-        <Text style={{ color: 'tomato' }}>Unsupported field type: {field.type}</Text>
+        <Text style={{ color: theme.color.error }}>Unsupported field type: {field.type}</Text>
       </View>
     );
   }
 
   const label = field.label || field.data_name || '';
   const labelNode = (
-    <Text style={{ fontWeight: '600' }}>
+    <Text style={{ fontWeight: '600', color: theme.color.label }}>
       {label} {required ? '*' : ''}
     </Text>
   );
@@ -59,24 +62,29 @@ export function FieldRenderer({
     />
   );
 
+  // Error container with reserved height to prevent layout shifts
+  const errorNode = showError ? (
+    <View style={{ minHeight: 18, marginTop: 4 }}>
+      {error ? (
+        <Text style={{ color: theme.color.error, fontSize: 12, lineHeight: 16 }}>{error}</Text>
+      ) : null}
+    </View>
+  ) : null;
+
   const content = (
     <>
       {field.description ? (
-        <Text style={{ color: '#555', marginTop: 4 }}>{field.description}</Text>
+        <Text style={{ color: theme.color.description, marginTop: 4 }}>{field.description}</Text>
       ) : null}
       {fieldInput}
-      {showError && error ? (
-        <Text style={{ color: 'tomato', marginTop: 4 }}>{error}</Text>
-      ) : null}
+      {errorNode}
     </>
   );
 
   if (isLabelSide) {
     return (
       <View style={{ marginBottom: 16, flexDirection: 'row' }}>
-        <View style={{ width: `${labelWidthPercent}%`, marginRight: 12 }}>
-          {labelNode}
-        </View>
+        <View style={{ width: `${labelWidthPercent}%`, marginRight: 12 }}>{labelNode}</View>
         <View style={{ flex: 1 }}>{content}</View>
       </View>
     );
