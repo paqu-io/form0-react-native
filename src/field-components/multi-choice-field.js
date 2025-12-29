@@ -28,6 +28,8 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
   const { readOnly: _ignoredReadOnly, required: _ignoredRequired, ...restInputProps } = inputProps;
   const choices = Array.isArray(field?.choices) ? field.choices : [];
   const displayMode = field?.display || 'default';
+  const isSearchable =
+    field?.is_searchable === true && field?.is_searchable_mode === 'default';
   const selectedValues = new Set(
     Array.isArray(value?.choices) ? value.choices.map((c) => c.value).filter(Boolean) : []
   );
@@ -36,6 +38,7 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
   const otherValue = hasOtherSelection ? otherEntries[0]?.label ?? '' : '';
   const showOtherInput = field?.allow_other && hasOtherSelection;
   const [isPickerOpen, setPickerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const emitChange = (nextChoices, nextOtherLabel, forceOther = false) => {
     if (typeof onChange !== 'function' || readOnly) return;
@@ -76,9 +79,18 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
 
   const closePicker = () => {
     setPickerOpen(false);
+    setSearchQuery('');
   };
 
   if (displayMode !== 'checkbox') {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const filteredChoices =
+      !isSearchable || !normalizedQuery
+        ? choices
+        : choices.filter((choice) => {
+            const label = choice?.label ?? '';
+            return String(label).toLowerCase().includes(normalizedQuery);
+          });
     const selectedLabels = Array.from(selectedValues)
       .map((value) => {
         const choice = choices.find((option) => option.value === value);
@@ -169,8 +181,26 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
               >
                 Select options
               </Text>
+              {isSearchable && (
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoFocus
+                  placeholder="Search..."
+                  placeholderTextColor={theme.color.placeholder}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.color.inputBorder,
+                    borderRadius: theme.borderRadius.md,
+                    padding: 8,
+                    marginBottom: 12,
+                    backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
+                    color: readOnly ? theme.color.inputDisabledFg : theme.color.foreground,
+                  }}
+                />
+              )}
               <ScrollView>
-                {choices.map((choice) => {
+                {filteredChoices.map((choice) => {
                   const isSelected = selectedValues.has(choice.value);
                   return (
                     <Pressable
@@ -206,6 +236,12 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
                     </Pressable>
                   );
                 })}
+
+                {filteredChoices.length === 0 && (
+                  <Text style={{ color: theme.color.placeholder, paddingVertical: 8 }}>
+                    No results
+                  </Text>
+                )}
 
                 {field?.allow_other && (
                   <Pressable

@@ -22,6 +22,8 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
   const { readOnly: _ignoredReadOnly, required: _ignoredRequired, ...restInputProps } = inputProps;
   const choices = Array.isArray(field?.choices) ? field.choices : [];
   const displayMode = field?.display || 'default';
+  const isSearchable =
+    field?.is_searchable === true && field?.is_searchable_mode === 'default';
   const selectedChoice = value?.choice?.[0]?.value ?? '';
   const otherEntries = Array.isArray(value?.other) ? value.other : [];
   const hasOtherSelection = field?.allow_other && otherEntries.length > 0;
@@ -29,6 +31,7 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
   const isOtherSelected = field?.allow_other && hasOtherSelection;
   const showOtherInput = field?.allow_other && isOtherSelected;
   const [isPickerOpen, setPickerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const emitChange = (choiceValue, nextOtherLabel = '') => {
     if (typeof onChange !== 'function' || readOnly) return;
@@ -68,9 +71,18 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
 
   const closePicker = () => {
     setPickerOpen(false);
+    setSearchQuery('');
   };
 
   if (displayMode !== 'radio') {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const filteredChoices =
+      !isSearchable || !normalizedQuery
+        ? choices
+        : choices.filter((choice) => {
+            const label = choice?.label ?? '';
+            return String(label).toLowerCase().includes(normalizedQuery);
+          });
     const selectedChoiceLabel = choices.find((choice) => choice.value === selectedChoice)?.label;
     const displayLabel = isOtherSelected
       ? 'Other'
@@ -152,6 +164,24 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
               >
                 Select an option
               </Text>
+              {isSearchable && (
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoFocus
+                  placeholder="Search..."
+                  placeholderTextColor={theme.color.placeholder}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.color.inputBorder,
+                    borderRadius: theme.borderRadius.md,
+                    padding: 8,
+                    marginBottom: 12,
+                    backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
+                    color: readOnly ? theme.color.inputDisabledFg : theme.color.foreground,
+                  }}
+                />
+              )}
               <ScrollView>
                 <Pressable
                   onPress={() => {
@@ -186,7 +216,7 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
                   <Text style={{ color: theme.color.foreground }}>Select an option...</Text>
                 </Pressable>
 
-                {choices.map((choice) => {
+                {filteredChoices.map((choice) => {
                   const isSelected = !isOtherSelected && selectedChoice === choice.value;
                   return (
                     <Pressable
@@ -226,6 +256,12 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
                     </Pressable>
                   );
                 })}
+
+                {filteredChoices.length === 0 && (
+                  <Text style={{ color: theme.color.placeholder, paddingVertical: 8 }}>
+                    No results
+                  </Text>
+                )}
 
                 {field?.allow_other && (
                   <Pressable
