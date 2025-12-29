@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import React, { useState } from 'react';
+import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useTheme } from '../theme-context.jsx';
 
 const OTHER_OPTION_VALUE = '__other__';
@@ -21,11 +21,14 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
   const { theme } = useTheme();
   const { readOnly: _ignoredReadOnly, required: _ignoredRequired, ...restInputProps } = inputProps;
   const choices = Array.isArray(field?.choices) ? field.choices : [];
+  const displayMode = field?.display || 'default';
   const selectedChoice = value?.choice?.[0]?.value ?? '';
   const otherEntries = Array.isArray(value?.other) ? value.other : [];
   const hasOtherSelection = field?.allow_other && otherEntries.length > 0;
   const otherValue = hasOtherSelection ? otherEntries[0]?.label ?? '' : '';
-  const isOtherSelected = field?.allow_other && (hasOtherSelection || selectedChoice === '');
+  const isOtherSelected = field?.allow_other && hasOtherSelection;
+  const showOtherInput = field?.allow_other && isOtherSelected;
+  const [isPickerOpen, setPickerOpen] = useState(false);
 
   const emitChange = (choiceValue, nextOtherLabel = '') => {
     if (typeof onChange !== 'function' || readOnly) return;
@@ -33,7 +36,7 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
     if (field?.allow_other && choiceValue === OTHER_OPTION_VALUE) {
       onChange({
         choice: [],
-        other: nextOtherLabel ? [{ label: nextOtherLabel }] : [],
+        other: [{ label: nextOtherLabel ?? '' }],
       });
       return;
     }
@@ -57,6 +60,226 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
       other: text ? [{ label: text }] : [],
     });
   };
+
+  const openPicker = () => {
+    if (readOnly) return;
+    setPickerOpen(true);
+  };
+
+  const closePicker = () => {
+    setPickerOpen(false);
+  };
+
+  if (displayMode !== 'radio') {
+    const selectedChoiceLabel = choices.find((choice) => choice.value === selectedChoice)?.label;
+    const displayLabel = isOtherSelected
+      ? 'Other'
+      : selectedChoiceLabel ?? (selectedChoice !== '' ? selectedChoice : '');
+    const hasSelection = isOtherSelected || selectedChoice !== '';
+    const selectionText = displayLabel || 'Select an option...';
+
+    return (
+      <View>
+        <Pressable
+          onPress={openPicker}
+          disabled={readOnly}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.color.inputBorder,
+            borderRadius: theme.borderRadius.md,
+            paddingVertical: 10,
+            paddingHorizontal: 12,
+            backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
+            opacity: readOnly ? 0.7 : 1,
+          }}
+        >
+          <Text style={{ color: hasSelection ? theme.color.foreground : theme.color.placeholder }}>
+            {selectionText}
+          </Text>
+        </Pressable>
+
+        {showOtherInput && (
+          <TextInput
+            value={otherValue || ''}
+            onChangeText={handleOtherChange}
+            editable={!readOnly}
+            placeholder="Please specify..."
+            placeholderTextColor={theme.color.placeholder}
+            style={{
+              marginTop: 8,
+              borderWidth: 1,
+              borderColor: theme.color.inputBorder,
+              borderRadius: theme.borderRadius.md,
+              padding: 8,
+              backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
+              color: readOnly ? theme.color.inputDisabledFg : theme.color.foreground,
+            }}
+            {...restInputProps}
+          />
+        )}
+
+        <Modal
+          visible={isPickerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={closePicker}
+          statusBarTranslucent
+        >
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.35)',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+            onPress={closePicker}
+          >
+            <Pressable
+              style={{
+                borderRadius: theme.borderRadius.lg,
+                padding: 16,
+                maxHeight: '80%',
+                backgroundColor: theme.color.background,
+              }}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <Text
+                style={{
+                  color: theme.color.foreground,
+                  fontWeight: '600',
+                  marginBottom: 12,
+                }}
+              >
+                Select an option
+              </Text>
+              <ScrollView>
+                <Pressable
+                  onPress={() => {
+                    handleSelect('');
+                    closePicker();
+                  }}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}
+                >
+                  <View
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderWidth: 1,
+                      borderColor: theme.color.inputBorder,
+                      borderRadius: 9,
+                      marginRight: 8,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {!hasSelection ? (
+                      <View
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 5,
+                          backgroundColor: theme.color.primary,
+                        }}
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={{ color: theme.color.foreground }}>Select an option...</Text>
+                </Pressable>
+
+                {choices.map((choice) => {
+                  const isSelected = !isOtherSelected && selectedChoice === choice.value;
+                  return (
+                    <Pressable
+                      key={choice.value}
+                      onPress={() => {
+                        handleSelect(choice.value);
+                        closePicker();
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}
+                    >
+                      <View
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderWidth: 1,
+                          borderColor: theme.color.inputBorder,
+                          borderRadius: 9,
+                          marginRight: 8,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {isSelected ? (
+                          <View
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 5,
+                              backgroundColor: theme.color.primary,
+                            }}
+                          />
+                        ) : null}
+                      </View>
+                      <Text style={{ color: theme.color.foreground }}>
+                        {choice.label || choice.value}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+                {field?.allow_other && (
+                  <Pressable
+                    onPress={() => {
+                      handleSelect(OTHER_OPTION_VALUE);
+                      closePicker();
+                    }}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}
+                  >
+                    <View
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderWidth: 1,
+                        borderColor: theme.color.inputBorder,
+                        borderRadius: 9,
+                        marginRight: 8,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {isOtherSelected ? (
+                        <View
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 5,
+                            backgroundColor: theme.color.primary,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                    <Text style={{ color: theme.color.foreground }}>Other</Text>
+                  </Pressable>
+                )}
+              </ScrollView>
+
+              <Pressable
+                onPress={closePicker}
+                style={{
+                  marginTop: 12,
+                  alignSelf: 'flex-end',
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                }}
+              >
+                <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Done</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -129,22 +352,24 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
             </View>
             <Text style={{ color: theme.color.foreground }}>Other</Text>
           </Pressable>
-          <TextInput
-            value={otherValue || ''}
-            onChangeText={handleOtherChange}
-            editable={!readOnly}
-            placeholder="Please specify..."
-            placeholderTextColor={theme.color.placeholder}
-            style={{
-              borderWidth: 1,
-              borderColor: theme.color.inputBorder,
-              borderRadius: theme.borderRadius.md,
-              padding: 8,
-              backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
-              color: readOnly ? theme.color.inputDisabledFg : theme.color.foreground,
-            }}
-            {...restInputProps}
-          />
+          {showOtherInput && (
+            <TextInput
+              value={otherValue || ''}
+              onChangeText={handleOtherChange}
+              editable={!readOnly}
+              placeholder="Please specify..."
+              placeholderTextColor={theme.color.placeholder}
+              style={{
+                borderWidth: 1,
+                borderColor: theme.color.inputBorder,
+                borderRadius: theme.borderRadius.md,
+                padding: 8,
+                backgroundColor: readOnly ? theme.color.inputDisabledBg : theme.color.inputBg,
+                color: readOnly ? theme.color.inputDisabledFg : theme.color.foreground,
+              }}
+              {...restInputProps}
+            />
+          )}
         </View>
       )}
     </View>
