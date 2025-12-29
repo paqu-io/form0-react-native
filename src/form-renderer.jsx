@@ -26,12 +26,115 @@ import { useRepeatableInstanceEngine } from './use-repeatable-instance.js';
 import { FormHeader } from './form-header.jsx';
 import { ThemeProvider, useTheme } from './theme-context.jsx';
 import { ImageResolverProvider } from './image-resolver-context.jsx';
+import { ChevronRight } from 'lucide-react-native';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
+const SECTION_LIKE_TYPES = new Set(['Section', 'RepeatableSection', 'BuildingPlanSection']);
+const SPECIAL_SECTION_TYPES = new Set(['RepeatableSection', 'BuildingPlanSection']);
 const REPEATABLE_TYPE = 'RepeatableSection';
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 const KEYBOARD_DISMISS_MODE = Platform.OS === 'ios' ? 'interactive' : 'on-drag';
 const DEFAULT_SCROLL_OFFSET = 24;
+
+/**
+ * Build section hierarchy metadata for drilldown navigation.
+ * Computes drilldownPath for each section to enable navigation state management.
+ * @param {Array} elements - Form schema elements
+ * @param {Function} resolveRepeatableKey - Optional function to resolve repeatable keys
+ * @returns {{ sectionTree: Array, sectionMetadata: Object, fieldToSectionPath: Object }}
+ */
+function buildSectionHierarchy(elements = [], resolveRepeatableKey) {
+  const metadata = {};
+  const fieldPathMap = {};
+
+  const traverse = (nodes, sectionPath = [], drilldownPath = []) => {
+    if (!Array.isArray(nodes)) {
+      return [];
+    }
+
+    const treeNodes = [];
+
+    nodes.forEach((el) => {
+      if (!el) {
+        return;
+      }
+
+      if (SECTION_LIKE_TYPES.has(el.type)) {
+        const sectionId = el.data_name || el.key;
+        const hasSectionId = typeof sectionId === 'string' && sectionId.length > 0;
+        // RepeatableSection and BuildingPlanSection always use drilldown display
+        const display =
+          el.type === 'RepeatableSection' || el.type === 'BuildingPlanSection'
+            ? 'drilldown'
+            : el.display || 'inline';
+        const nextSectionPath = hasSectionId ? [...sectionPath, sectionId] : sectionPath;
+        const shouldExtendDrilldown = display === 'drilldown' && hasSectionId;
+        const nextDrilldownPath = shouldExtendDrilldown
+          ? [...drilldownPath, sectionId]
+          : drilldownPath;
+
+        if (hasSectionId) {
+          const repeatableKey =
+            el.type === 'RepeatableSection' && typeof resolveRepeatableKey === 'function'
+              ? resolveRepeatableKey(el)
+              : null;
+          metadata[sectionId] = {
+            id: sectionId,
+            label: el.label || el.data_name || 'Unnamed Section',
+            type: el.type,
+            display,
+            path: nextSectionPath,
+            drilldownPath: nextDrilldownPath,
+            repeatableKey,
+            field: el,
+          };
+        }
+
+        // For BuildingPlanSection we intentionally hide its inner repeatables from navigation
+        const shouldDescend = el.type !== 'BuildingPlanSection';
+        const childNodes = shouldDescend
+          ? traverse(el.elements || [], nextSectionPath, nextDrilldownPath)
+          : [];
+
+        if (
+          hasSectionId &&
+          (el.type === 'Section' || el.type === 'RepeatableSection' || el.type === 'BuildingPlanSection')
+        ) {
+          treeNodes.push({
+            id: sectionId,
+            label: el.label || el.data_name || 'Unnamed Section',
+            display,
+            type: el.type,
+            children: childNodes,
+          });
+        } else {
+          treeNodes.push(...childNodes);
+        }
+      } else if (el.data_name) {
+        fieldPathMap[el.data_name] = sectionPath;
+      }
+    });
+
+    return treeNodes;
+  };
+
+  const sectionTree = traverse(elements);
+  return { sectionTree, sectionMetadata: metadata, fieldToSectionPath: fieldPathMap };
+}
+
+/**
+ * Check if pathA is a prefix of pathB (or equal to it).
+ * Used for determining if a section is on the active drilldown path.
+ */
+function isPathPrefix(pathA, pathB) {
+  if (!Array.isArray(pathA) || !Array.isArray(pathB)) {
+    return false;
+  }
+  if (pathA.length > pathB.length) {
+    return false;
+  }
+  return pathA.every((segment, index) => segment === pathB[index]);
+}
 
 const FormScrollView = React.forwardRef(function FormScrollView(
   { children, contentContainerStyle, onScroll, onLayout, style, ...props },
@@ -278,6 +381,60 @@ export function FormRenderer({
     [elements]
   );
 
+  // Resolve repeatable key helper for section hierarchy
+  const resolveRepeatableKey = useCallback((field) => {
+    if (!field) return null;
+    if (field.key && typeof field.key === 'string' && field.key.trim().length > 0) {
+      return field.key;
+    }
+    return field.data_name || null;
+  }, []);
+
+  // Build section hierarchy for drilldown navigation
+  const { sectionMetadata } = useMemo(
+    () => buildSectionHierarchy(elements, resolveRepeatableKey),
+    [elements, resolveRepeatableKey]
+  );
+
+  // Drilldown navigation state
+  const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
+
+  // Derived drilldown state values
+  const activeDrilldownSectionId =
+    activeDrilldownPath.length > 0 ? activeDrilldownPath[activeDrilldownPath.length - 1] : null;
+  const activeDrilldownSectionInfo = activeDrilldownSectionId
+    ? sectionMetadata[activeDrilldownSectionId]
+    : null;
+  const isSpecialSectionActive =
+    activeDrilldownSectionInfo && SPECIAL_SECTION_TYPES.has(activeDrilldownSectionInfo.type);
+  const drilldownDepth = activeDrilldownPath.length;
+  const isRootPage = drilldownDepth === 0;
+  const isFirstSpecialPage = drilldownDepth === 1 && isSpecialSectionActive;
+  const isNestedDrilldownPage = drilldownDepth > 0 && (!isSpecialSectionActive || drilldownDepth > 1);
+  const isRepeatableFirstPage =
+    isFirstSpecialPage && activeDrilldownSectionInfo?.type === 'RepeatableSection';
+
+  // Drilldown navigation functions
+  const pushDrilldownSection = useCallback((sectionId) => {
+    const section = sectionMetadata[sectionId];
+    if (!section) return;
+    setActiveDrilldownPath(section.drilldownPath);
+  }, [sectionMetadata]);
+
+  const popDrilldownLevel = useCallback(() => {
+    if (!activeDrilldownSectionId) {
+      setActiveDrilldownPath([]);
+      return;
+    }
+    const info = sectionMetadata[activeDrilldownSectionId];
+    if (!info) {
+      setActiveDrilldownPath([]);
+      return;
+    }
+    const nextDrilldownPath = info.drilldownPath.slice(0, -1);
+    setActiveDrilldownPath(nextDrilldownPath);
+  }, [activeDrilldownSectionId, sectionMetadata]);
+
   const resolveRepeatableContainer = useCallback(
     (state, path = [], { createIfMissing = false } = {}) => {
       let container = state || {};
@@ -508,9 +665,20 @@ export function FormRenderer({
         parentPath = [],
         onFieldFocus,
         theme,
+        // Drilldown state passed from parent
+        activeDrilldownPath: drilldownPath = [],
+        sectionMetadata: sectionMeta = {},
+        onDrilldownNavigate,
+        parentSectionPath = [],
       }
-    ) =>
-      items.map((field) => {
+    ) => {
+      const activeDrilldownSectionId =
+        drilldownPath.length > 0 ? drilldownPath[drilldownPath.length - 1] : null;
+      const activeDrilldownFullPath = activeDrilldownSectionId
+        ? sectionMeta?.[activeDrilldownSectionId]?.path || []
+        : [];
+
+      return items.map((field) => {
         if (!field) return null;
 
         // Use a fallback theme if not provided (for backwards compatibility)
@@ -530,6 +698,47 @@ export function FormRenderer({
           },
         };
 
+        if (activeDrilldownSectionId) {
+          if (SECTION_LIKE_TYPES.has(field.type)) {
+            const sectionId = field.data_name || field.key;
+            if (!sectionId) {
+              return null;
+            }
+            const sectionPath = [...parentSectionPath, sectionId];
+            const isAncestorOfActive =
+              sectionId !== activeDrilldownSectionId &&
+              activeDrilldownFullPath.includes(sectionId);
+            const isWithinActiveBranch = sectionPath.includes(activeDrilldownSectionId);
+
+            if (!isAncestorOfActive && !isWithinActiveBranch) {
+              return null;
+            }
+
+            if (isAncestorOfActive) {
+              return (
+                <React.Fragment key={sectionId}>
+                  {renderElements(field.elements || [], {
+                    state,
+                    setValue: applyValue,
+                    readOnly,
+                    submitCount: localSubmitCount,
+                    controller,
+                    parentPath,
+                    onFieldFocus,
+                    theme,
+                    activeDrilldownPath: drilldownPath,
+                    sectionMetadata: sectionMeta,
+                    onDrilldownNavigate,
+                    parentSectionPath: sectionPath,
+                  })}
+                </React.Fragment>
+              );
+            }
+          } else if (!parentSectionPath.includes(activeDrilldownSectionId)) {
+            return null;
+          }
+        }
+
         if (field.type === REPEATABLE_TYPE) {
           const { repeatableKey, repInfo } = resolveRepeatableInfo(
             field,
@@ -546,22 +755,24 @@ export function FormRenderer({
             paddingHorizontal: 8,
             borderRadius: 999,
             backgroundColor: count === 0 ? t.color.cancelBg : t.color.bannerEditBg || '#e0e7ff',
-            alignSelf: 'flex-start',
           };
           const countTextStyle = {
             fontSize: 12,
             color: count === 0 ? t.color.description : t.color.bannerEditFg || '#1f2937',
             fontWeight: '600',
           };
+          // Drilldown card style - matches web's drilldownInactive
           return (
             <View
               key={field.key || field.data_name}
               style={{
                 borderWidth: 1,
-                borderColor: t.color.border,
-                borderRadius: 14,
-                padding: 14,
-                marginBottom: 16,
+                borderColor: t.color.sectionBorder || t.color.border,
+                borderLeftWidth: 5,
+                borderLeftColor: t.color.primary,
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 12,
                 backgroundColor: t.color.section,
               }}
             >
@@ -570,60 +781,45 @@ export function FormRenderer({
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  marginBottom: 6,
                 }}
               >
-                <Text style={{ fontWeight: '700', fontSize: 16, color: t.color.foreground }}>
-                  {field.label || 'Repeatable Section'}
-                </Text>
-                <View style={countPillStyle}>
-                  <Text style={countTextStyle}>{countLabel}</Text>
-                </View>
-              </View>
-              {field.description ? (
-                <Text style={{ color: t.color.description, marginBottom: 10 }}>
-                  {field.description}
-                </Text>
-              ) : null}
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {!readOnly && (
-                  <Pressable
-                    onPress={() => {
-                      const draft = createEmptyRepeatableInstance(repInfo);
-                      openRepeatableEditor({
-                        field,
-                        controller,
-                        parentPath,
-                        repeatableKey,
-                        repInfo,
-                        instanceId: draft.id,
-                        mode: 'create',
-                        draft,
-                      });
+                {/* Left side: label and count pill */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                  <Text
+                    style={{
+                      fontWeight: '600',
+                      fontSize: 15,
+                      color: t.color.sectionHeader || t.color.foreground,
                     }}
-                    style={({ pressed }) => ({
-                      alignSelf: 'flex-start',
-                      paddingVertical: 6,
-                      paddingHorizontal: 12,
-                      borderRadius: 999,
-                      backgroundColor: pressed ? t.color.buttonHoverBg : t.color.buttonBg,
-                      marginRight: 8,
-                    })}
+                    numberOfLines={1}
                   >
-                    <Text style={{ color: t.color.buttonFg, fontWeight: '600' }}>Add entry</Text>
-                  </Pressable>
-                )}
+                    {field.label || 'Repeatable Section'}
+                  </Text>
+                  <View style={countPillStyle}>
+                    <Text style={countTextStyle}>{countLabel}</Text>
+                  </View>
+                </View>
+                {/* Right side: View button */}
                 <Pressable
                   onPress={() => openRepeatableList({ field, controller, parentPath })}
                   style={({ pressed }) => ({
-                    alignSelf: 'flex-start',
+                    flexDirection: 'row',
+                    alignItems: 'center',
                     paddingVertical: 6,
                     paddingHorizontal: 10,
-                    borderRadius: 999,
-                    backgroundColor: pressed ? t.color.cancelHoverBg : t.color.cancelBg,
+                    borderRadius: 6,
+                    backgroundColor: pressed
+                      ? (t.color.drilldownButtonBg || t.color.buttonBg)
+                      : 'transparent',
+                    borderWidth: 1,
+                    borderColor: t.color.border,
+                    gap: 4,
                   })}
                 >
-                  <Text style={{ color: t.color.cancelFg }}>{readOnly ? 'View' : 'Manage'}</Text>
+                  <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: 14 }}>
+                    View
+                  </Text>
+                  <ChevronRight size={16} color={t.color.foreground} strokeWidth={2} />
                 </Pressable>
               </View>
             </View>
@@ -631,9 +827,146 @@ export function FormRenderer({
         }
 
         if (SECTION_TYPES.has(field.type)) {
-          const sectionId = field.data_name || field.key || Math.random().toString(36);
+          const sectionId = field.data_name || field.key;
+          const display = field.display || 'inline';
+          const sectionPath = sectionId ? [...parentSectionPath, sectionId] : parentSectionPath;
+
+          // Handle drilldown sections
+          if (display === 'drilldown' && sectionId) {
+            const sectionInfo = sectionMeta[sectionId];
+            const sectionDrilldownPath = sectionInfo?.drilldownPath ?? [];
+            const isDescendantOfActive =
+              drilldownPath.length > 0
+                ? isPathPrefix(drilldownPath, sectionDrilldownPath)
+                : false;
+            const isOnActivePath = isPathPrefix(sectionDrilldownPath, drilldownPath);
+            const isCurrentLevelActive = isOnActivePath && sectionDrilldownPath.length === drilldownPath.length;
+
+            // If there's an active drilldown and this section is not on the path, hide it
+            if (drilldownPath.length > 0 && !isOnActivePath && !isDescendantOfActive) {
+              return null;
+            }
+
+            const shouldRenderPreviewState =
+              !isOnActivePath && (!drilldownPath.length || isDescendantOfActive);
+
+            // If not active, render as drilldown card
+            if (shouldRenderPreviewState) {
+              return (
+                <View
+                  key={sectionId}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: t.color.sectionBorder || t.color.border,
+                    borderLeftWidth: 5,
+                    borderLeftColor: t.color.primary,
+                    borderRadius: 8,
+                    padding: 12,
+                    marginBottom: 12,
+                    backgroundColor: t.color.section,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontWeight: '600',
+                        fontSize: 15,
+                        color: t.color.sectionHeader || t.color.foreground,
+                        flex: 1,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {field.label || 'Section'}
+                    </Text>
+                    <Pressable
+                      onPress={() => onDrilldownNavigate?.(sectionId)}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        borderRadius: 6,
+                        backgroundColor: pressed
+                          ? (t.color.drilldownButtonBg || t.color.buttonBg)
+                          : 'transparent',
+                        borderWidth: 1,
+                        borderColor: t.color.border,
+                        gap: 4,
+                      })}
+                    >
+                      <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: 14 }}>
+                        View
+                      </Text>
+                      <ChevronRight size={16} color={t.color.foreground} strokeWidth={2} />
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            }
+
+            if (!isCurrentLevelActive) {
+              // Ancestor of active - just render children without section wrapper
+              return (
+                <React.Fragment key={sectionId}>
+                  {renderElements(field.elements || [], {
+                    state,
+                    setValue: applyValue,
+                    readOnly,
+                    submitCount: localSubmitCount,
+                    controller,
+                    parentPath,
+                    onFieldFocus,
+                    theme,
+                    activeDrilldownPath: drilldownPath,
+                    sectionMetadata: sectionMeta,
+                    onDrilldownNavigate,
+                    parentSectionPath: sectionPath,
+                  })}
+                </React.Fragment>
+              );
+            }
+
+            // If this section is active render with header and content
+            if (isCurrentLevelActive) {
+              // Active drilldown section - render with header and content
+              return (
+                <View key={sectionId} style={{ marginBottom: 16 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 18, marginBottom: 8, color: t.color.sectionHeader || t.color.foreground }}>
+                    {field.label}
+                  </Text>
+                  {field.description ? (
+                    <Text style={{ color: t.color.description, marginBottom: 12 }}>
+                      {field.description}
+                    </Text>
+                  ) : null}
+                  {renderElements(field.elements || [], {
+                    state,
+                    setValue: applyValue,
+                    readOnly,
+                    submitCount: localSubmitCount,
+                    controller,
+                    parentPath,
+                    onFieldFocus,
+                    theme,
+                    activeDrilldownPath: drilldownPath,
+                    sectionMetadata: sectionMeta,
+                    onDrilldownNavigate,
+                    parentSectionPath: sectionPath,
+                  })}
+                </View>
+              );
+            }
+          }
+
+          // Inline section (default) - render normally
           return (
-            <View key={sectionId} style={{ marginBottom: 16 }}>
+            <View key={sectionId || Math.random().toString(36)} style={{ marginBottom: 16 }}>
               {field.label ? (
                 <Text style={{ fontWeight: '700', marginBottom: 8, color: t.color.sectionHeader || t.color.foreground }}>
                   {field.label}
@@ -654,6 +987,10 @@ export function FormRenderer({
                   parentPath,
                   onFieldFocus,
                   theme,
+                  activeDrilldownPath: drilldownPath,
+                  sectionMetadata: sectionMeta,
+                  onDrilldownNavigate,
+                  parentSectionPath: sectionPath,
                 })}
               </View>
             </View>
@@ -694,8 +1031,9 @@ export function FormRenderer({
             }}
           />
         );
-      }),
-    [labelPosition, labelWidthPercent, openRepeatableEditor, openRepeatableList, resolveRepeatableInfo]
+      });
+    },
+    [labelPosition, labelWidthPercent, openRepeatableEditor, openRepeatableList, resolveRepeatableInfo, sectionMetadata]
   );
 
   const canSubmit = !isReadOnly && typeof onSubmit === 'function';
@@ -885,6 +1223,11 @@ export function FormRenderer({
         parentPath: [],
         onFieldFocus: mainScroll.onFieldFocus,
         theme,
+        // Drilldown state for section rendering
+        activeDrilldownPath,
+        sectionMetadata,
+        onDrilldownNavigate: pushDrilldownSection,
+        parentSectionPath: [],
       })}
     </KeyboardFormScrollView>
   );
@@ -966,6 +1309,13 @@ export function FormRenderer({
             showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
             renderRepeatableScreen={renderRepeatableScreen}
             renderMainFormContent={renderMainFormContent}
+            // Drilldown state props
+            isRootPage={isRootPage}
+            isFirstSpecialPage={isFirstSpecialPage}
+            isNestedDrilldownPage={isNestedDrilldownPage}
+            isRepeatableFirstPage={isRepeatableFirstPage}
+            activeDrilldownSectionInfo={activeDrilldownSectionInfo}
+            popDrilldownLevel={popDrilldownLevel}
           />
         </FieldRegistryProvider>
       </ImageResolverProvider>
@@ -988,19 +1338,112 @@ function FormRendererInner({
   showPrimaryActionsInViewMode,
   renderRepeatableScreen,
   renderMainFormContent,
+  // Drilldown state props
+  isRootPage,
+  isFirstSpecialPage,
+  isNestedDrilldownPage,
+  isRepeatableFirstPage,
+  activeDrilldownSectionInfo,
+  popDrilldownLevel,
 }) {
   const { theme } = useTheme();
+  const isReadOnly = interactionMode === 'readonly';
+
+  // Compute header actions based on drilldown state (matching web logic)
+  const headerActions = useMemo(() => {
+    let leftAction = null;
+    let rightAction = null;
+    let secondaryRightAction = null;
+
+    // Left action: Back or Cancel based on drilldown state
+    if (isNestedDrilldownPage || isRepeatableFirstPage) {
+      // Nested drilldown or repeatable first page: show Back button
+      leftAction = {
+        id: 'back',
+        label: 'Back',
+        variant: 'back',
+        onPress: popDrilldownLevel,
+      };
+    } else if (isFirstSpecialPage) {
+      // First special page (non-repeatable): show Cancel
+      leftAction = {
+        id: 'cancel-section',
+        label: 'Cancel',
+        variant: 'cancel',
+        onPress: popDrilldownLevel,
+      };
+    } else if (isRootPage && typeof requestCancel === 'function') {
+      // Root page: show Cancel
+      leftAction = {
+        id: 'cancel-root',
+        label: 'Cancel',
+        variant: 'cancel',
+        onPress: requestCancel,
+      };
+    }
+
+    if (isReadOnly && typeof enterEditMode === 'function') {
+      rightAction = {
+        id: 'enter-edit-mode',
+        label: 'Edit',
+        variant: 'edit',
+        onPress: enterEditMode,
+      };
+      return { leftAction, rightAction, secondaryRightAction };
+    }
+
+    // Right action: Submit or Save based on context (edit mode only)
+    if (isRootPage && typeof handleFormSubmit === 'function') {
+      rightAction = {
+        id: 'submit',
+        label: 'Submit',
+        variant: 'primary',
+        onPress: handleFormSubmit,
+        disabled: !canSubmit,
+      };
+    } else if (
+      isFirstSpecialPage &&
+      !isRepeatableFirstPage &&
+      typeof handleFormSubmit === 'function'
+    ) {
+      // Drilldown section (non-repeatable): show Save
+      rightAction = {
+        id: 'save-section',
+        label: 'Save',
+        variant: 'primary',
+        onPress: handleFormSubmit,
+        disabled: !canSubmit,
+      };
+    }
+    // Note: Add button for repeatable first page is handled in RepeatableListScreen
+
+    return { leftAction, rightAction, secondaryRightAction };
+  }, [
+    canSubmit,
+    enterEditMode,
+    handleFormSubmit,
+    isFirstSpecialPage,
+    isNestedDrilldownPage,
+    isReadOnly,
+    isRepeatableFirstPage,
+    isRootPage,
+    popDrilldownLevel,
+    requestCancel,
+  ]);
+
+  // Get the title to show in header (section name when drilled down, form name otherwise)
+  const headerTitle = activeDrilldownSectionInfo?.label || formName;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
       {/* Fixed Header - always visible at top */}
       {showHeader && !activeRepeatableScreen && (
         <FormHeader
-          formName={formName}
+          formName={headerTitle}
           mode={interactionMode}
-          onCancel={requestCancel}
-          onSubmit={handleFormSubmit}
-          onEnterEditMode={enterEditMode}
+          leftAction={headerActions.leftAction}
+          rightAction={headerActions.rightAction}
+          secondaryRightAction={headerActions.secondaryRightAction}
           canSubmit={canSubmit}
           showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
         />
