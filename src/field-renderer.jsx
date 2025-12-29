@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { Text, View, Pressable, Modal, ScrollView, Platform, Image as RNImage } from 'react-native';
+import { View, Pressable, Modal, ScrollView, Platform, Image as RNImage } from 'react-native';
 import { Info, X, ImageIcon } from 'lucide-react-native';
 import { useFieldRegistry } from './field-registry-context.jsx';
 import { useTheme } from './theme-context.jsx';
 import { useImageResolver } from './image-resolver-context.jsx';
+import { Text } from './typography.jsx';
 
 const LABEL_SIDE = 'side';
 
@@ -74,7 +75,7 @@ export function FieldRenderer({
     return (
       <View style={{ marginBottom: 16 }}>
         <View style={styles.labelRow}>
-          <Text style={{ fontWeight: '600', color: theme.color.label, flex: 1 }}>
+          <Text style={{ fontWeight: theme.fontWeight.medium, color: theme.color.label, flex: 1 }}>
             {field.label} {required ? '*' : ''}
           </Text>
         </View>
@@ -129,7 +130,7 @@ export function FieldRenderer({
   // Label row with text and controls
   const labelNode = (
     <View style={styles.labelRow}>
-      <Text style={{ fontWeight: '600', color: theme.color.label, flex: 1 }}>
+      <Text style={{ fontWeight: theme.fontWeight.medium, color: theme.color.label, flex: 1 }}>
         {label} {required ? '*' : ''}
       </Text>
       {renderLabelControls()}

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import { useTheme } from '../theme-context.jsx';
+import { Text } from '../typography.jsx';
 
 function formatDisplayValue(value, style) {
   if (value == null) return '';

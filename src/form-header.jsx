@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { XCircle, SendHorizontal, Pencil, ChevronLeft, Plus, Save } from 'lucide-react-native';
 import { useTheme } from './theme-context.jsx';
+import { Text } from './typography.jsx';
 
 const HIT_SLOP = { top: 12, bottom: 12, left: 12, right: 12 };
 

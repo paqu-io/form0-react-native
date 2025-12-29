@@ -1,6 +1,6 @@
 import React from 'react';
-import { TextInput } from 'react-native';
 import { useTheme } from '../theme-context.jsx';
+import { TextInput } from '../typography.jsx';
 
 const normalizeDateValue = (raw) => {
   if (!raw || typeof raw !== 'string') return '';

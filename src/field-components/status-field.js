@@ -1,6 +1,7 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useTheme } from '../theme-context.jsx';
+import { Text } from '../typography.jsx';
 
 export function StatusFieldComponent({ field, value, onChange, readOnly }) {
   const { theme } = useTheme();

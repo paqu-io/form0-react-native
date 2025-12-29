@@ -1,6 +1,7 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useTheme } from '../theme-context.jsx';
+import { Text } from '../typography.jsx';
 
 function mapChoice(field, value) {
   const choice = Array.isArray(field?.choices)

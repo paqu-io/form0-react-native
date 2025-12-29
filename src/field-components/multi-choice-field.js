@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useTheme } from '../theme-context.jsx';
+import { Text, TextInput } from '../typography.jsx';
 
 const OTHER_OPTION_VALUE = '__other__';
 

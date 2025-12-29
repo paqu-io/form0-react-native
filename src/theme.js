@@ -85,6 +85,24 @@ export const lightTheme = {
     xl: 24, // 1.5rem
   },
 
+  // Typography
+  typography: {
+    fontFamily: 'Figtree-Regular',
+    fontFamilyItalic: 'Figtree-Italic',
+    fontFamilyByWeight: {
+      400: 'Figtree-Regular',
+      500: 'Figtree-Medium',
+      600: 'Figtree-SemiBold',
+      700: 'Figtree-Bold',
+    },
+    fontFamilyByWeightItalic: {
+      400: 'Figtree-Italic',
+      500: 'Figtree-MediumItalic',
+      600: 'Figtree-SemiBoldItalic',
+      700: 'Figtree-BoldItalic',
+    },
+  },
+
   // Border radius
   borderRadius: {
     sm: 4,
@@ -194,6 +212,24 @@ export const darkTheme = {
     md: 8,
     lg: 16,
     xl: 24,
+  },
+
+  // Typography
+  typography: {
+    fontFamily: 'Figtree-Regular',
+    fontFamilyItalic: 'Figtree-Italic',
+    fontFamilyByWeight: {
+      400: 'Figtree-Regular',
+      500: 'Figtree-Medium',
+      600: 'Figtree-SemiBold',
+      700: 'Figtree-Bold',
+    },
+    fontFamilyByWeightItalic: {
+      400: 'Figtree-Italic',
+      500: 'Figtree-MediumItalic',
+      600: 'Figtree-SemiBoldItalic',
+      700: 'Figtree-BoldItalic',
+    },
   },
 
   // Border radius

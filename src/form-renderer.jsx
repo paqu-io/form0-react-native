@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFormEngine } from './use-form-engine';
 import { FieldRenderer } from './field-renderer';
 import { FieldRegistryProvider } from './field-registry-context.jsx';
+import { Text } from './typography.jsx';
 import {
   ScrollView,
   Button,
   View,
-  Text,
   Pressable,
   KeyboardAvoidingView,
   Platform,
@@ -937,7 +937,14 @@ export function FormRenderer({
               // Active drilldown section - render with header and content
               return (
                 <View key={sectionId} style={{ marginBottom: 16 }}>
-                  <Text style={{ fontWeight: '700', fontSize: 18, marginBottom: 8, color: t.color.sectionHeader || t.color.foreground }}>
+                  <Text
+                    style={{
+                      fontWeight: t.fontWeight.bold,
+                      fontSize: 18,
+                      marginBottom: 8,
+                      color: t.color.sectionHeader || t.color.foreground,
+                    }}
+                  >
                     {field.label}
                   </Text>
                   {field.description ? (
@@ -968,7 +975,13 @@ export function FormRenderer({
           return (
             <View key={sectionId || Math.random().toString(36)} style={{ marginBottom: 16 }}>
               {field.label ? (
-                <Text style={{ fontWeight: '700', marginBottom: 8, color: t.color.sectionHeader || t.color.foreground }}>
+                <Text
+                  style={{
+                    fontWeight: t.fontWeight.bold,
+                    marginBottom: 8,
+                    color: t.color.sectionHeader || t.color.foreground,
+                  }}
+                >
                   {field.label}
                 </Text>
               ) : null}
@@ -1477,7 +1490,14 @@ function RepeatableListScreen({
           <Text style={{ color: theme.color.primary }}>← Back</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', flex: 1, color: theme.color.foreground }}>
+          <Text
+            style={{
+              fontSize: 20,
+              fontWeight: theme.fontWeight.bold,
+              flex: 1,
+              color: theme.color.foreground,
+            }}
+          >
             {label}
           </Text>
           {readOnly ? (
@@ -1696,7 +1716,14 @@ function RepeatableEditorScreen({
           <Text style={{ color: theme.color.primary }}>← Back</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', flex: 1, color: theme.color.foreground }}>
+          <Text
+            style={{
+              fontSize: 20,
+              fontWeight: theme.fontWeight.bold,
+              flex: 1,
+              color: theme.color.foreground,
+            }}
+          >
             {screen.field?.label || 'Entry'}
           </Text>
           {readOnly ? (
