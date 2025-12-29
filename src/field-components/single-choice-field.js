@@ -74,6 +74,11 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
     setSearchQuery('');
   };
 
+  const clearSelection = () => {
+    emitChange('', '');
+    closePicker();
+  };
+
   if (displayMode !== 'radio') {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const filteredChoices =
@@ -183,39 +188,6 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
                 />
               )}
               <ScrollView>
-                <Pressable
-                  onPress={() => {
-                    handleSelect('');
-                    closePicker();
-                  }}
-                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}
-                >
-                  <View
-                    style={{
-                      width: 18,
-                      height: 18,
-                      borderWidth: 1,
-                      borderColor: theme.color.inputBorder,
-                      borderRadius: 9,
-                      marginRight: 8,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    {!hasSelection ? (
-                      <View
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 5,
-                          backgroundColor: theme.color.primary,
-                        }}
-                      />
-                    ) : null}
-                  </View>
-                  <Text style={{ color: theme.color.foreground }}>Select an option...</Text>
-                </Pressable>
-
                 {filteredChoices.map((choice) => {
                   const isSelected = !isOtherSelected && selectedChoice === choice.value;
                   return (
@@ -299,17 +271,32 @@ export function SingleChoiceFieldComponent({ field, value, onChange, readOnly, i
                 )}
               </ScrollView>
 
-              <Pressable
-                onPress={closePicker}
+              <View
                 style={{
                   marginTop: 12,
-                  alignSelf: 'flex-end',
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
                 }}
               >
-                <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Done</Text>
-              </Pressable>
+                <Pressable
+                  onPress={clearSelection}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Clear</Text>
+                </Pressable>
+                <Pressable
+                  onPress={closePicker}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Done</Text>
+                </Pressable>
+              </View>
             </Pressable>
           </Pressable>
         </Modal>

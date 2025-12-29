@@ -82,6 +82,11 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
     setSearchQuery('');
   };
 
+  const clearSelection = () => {
+    emitChange(new Set(), '', false);
+    closePicker();
+  };
+
   if (displayMode !== 'checkbox') {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const filteredChoices =
@@ -295,17 +300,32 @@ export function MultiChoiceFieldComponent({ field, value, onChange, readOnly, in
                 />
               )}
 
-              <Pressable
-                onPress={closePicker}
+              <View
                 style={{
                   marginTop: 12,
-                  alignSelf: 'flex-end',
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
                 }}
               >
-                <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Done</Text>
-              </Pressable>
+                <Pressable
+                  onPress={clearSelection}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Clear</Text>
+                </Pressable>
+                <Pressable
+                  onPress={closePicker}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <Text style={{ color: theme.color.primary, fontWeight: '600' }}>Done</Text>
+                </Pressable>
+              </View>
             </Pressable>
           </Pressable>
         </Modal>
