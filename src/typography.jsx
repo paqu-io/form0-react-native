@@ -80,6 +80,13 @@ function mergeFontFamily(style, fontFamily) {
   return [baseStyle, style];
 }
 
+function prependBaseStyle(style, baseStyle) {
+  if (!baseStyle) return style;
+  if (!style) return baseStyle;
+  if (Array.isArray(style)) return [baseStyle, ...style];
+  return [baseStyle, style];
+}
+
 export function Text({ style, ...props }) {
   const { theme } = useTheme();
   const { fontFamily, stripWeight, stripStyle } = resolveFontFamily(theme, style);
@@ -91,8 +98,10 @@ export function Text({ style, ...props }) {
         ])
       : style;
   const mergedStyle = mergeFontFamily(cleanedStyle, fontFamily);
+  const baseStyle = theme?.fontSize?.base ? { fontSize: theme.fontSize.base } : null;
+  const withBaseStyle = prependBaseStyle(mergedStyle, baseStyle);
 
-  return <RNText {...props} style={mergedStyle} />;
+  return <RNText {...props} style={withBaseStyle} />;
 }
 
 export function TextInput({ style, ...props }) {
@@ -106,6 +115,8 @@ export function TextInput({ style, ...props }) {
         ])
       : style;
   const mergedStyle = mergeFontFamily(cleanedStyle, fontFamily);
+  const baseStyle = theme?.fontSize?.base ? { fontSize: theme.fontSize.base } : null;
+  const withBaseStyle = prependBaseStyle(mergedStyle, baseStyle);
 
-  return <RNTextInput {...props} style={mergedStyle} />;
+  return <RNTextInput {...props} style={withBaseStyle} />;
 }

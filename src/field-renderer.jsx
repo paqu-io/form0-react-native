@@ -127,10 +127,24 @@ export function FieldRenderer({
     return <View style={styles.controlsContainer}>{controls}</View>;
   };
 
+  const fieldContainerStyle = {
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.color.border,
+    marginBottom: theme.spacing.xs,
+  };
+
   // Label row with text and controls
   const labelNode = (
     <View style={styles.labelRow}>
-      <Text style={{ fontWeight: theme.fontWeight.medium, color: theme.color.label, flex: 1 }}>
+      <Text
+        style={{
+          fontWeight: theme.fontWeight.medium,
+          color: theme.color.label,
+          flex: 1,
+          fontSize: theme.fontSize.base,
+        }}
+      >
         {label} {required ? '*' : ''}
       </Text>
       {renderLabelControls()}
@@ -139,7 +153,12 @@ export function FieldRenderer({
 
   // Subtext description (shown below label)
   const subtextNode = hasSubtextDescription ? (
-    <Text style={[styles.subtextDescription, { color: theme.color.description }]}>
+    <Text
+      style={[
+        styles.subtextDescription,
+        { color: theme.color.description, fontSize: theme.fontSize.subtext || theme.fontSize.sm },
+      ]}
+    >
       {field.description}
     </Text>
   ) : null;
@@ -179,7 +198,9 @@ export function FieldRenderer({
   const errorNode = showError ? (
     <View style={{ minHeight: 18, marginTop: 4 }}>
       {error ? (
-        <Text style={{ color: theme.color.error, fontSize: 12, lineHeight: 16 }}>{error}</Text>
+        <Text style={{ color: theme.color.error, fontSize: theme.fontSize.xs, lineHeight: 16 }}>
+          {error}
+        </Text>
       ) : null}
     </View>
   ) : null;
@@ -202,7 +223,12 @@ export function FieldRenderer({
           <View style={[styles.modalHeader, { borderBottomColor: theme.color.border }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               <Info size={18} color={theme.color.primary} strokeWidth={2} />
-              <Text style={[styles.modalTitle, { color: theme.color.foreground }]}>
+              <Text
+                style={[
+                  styles.modalTitle,
+                  { color: theme.color.foreground, fontSize: theme.fontSize.md || theme.fontSize.base },
+                ]}
+              >
                 Field Information
               </Text>
             </View>
@@ -223,8 +249,20 @@ export function FieldRenderer({
             contentContainerStyle={{ padding: 16 }}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.modalFieldLabel, { color: theme.color.foreground }]}>{label}</Text>
-            <Text style={[styles.modalDescription, { color: theme.color.description }]}>
+            <Text
+              style={[
+                styles.modalFieldLabel,
+                { color: theme.color.foreground, fontSize: theme.fontSize.base },
+              ]}
+            >
+              {label}
+            </Text>
+            <Text
+              style={[
+                styles.modalDescription,
+                { color: theme.color.description, fontSize: theme.fontSize.sm },
+              ]}
+            >
               {field.description}
             </Text>
           </ScrollView>
@@ -267,7 +305,12 @@ export function FieldRenderer({
             <View style={[styles.modalHeader, { borderBottomColor: theme.color.border }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                 <ImageIcon size={18} color={theme.color.primary} strokeWidth={2} />
-                <Text style={[styles.modalTitle, { color: theme.color.foreground }]}>
+                <Text
+                  style={[
+                    styles.modalTitle,
+                    { color: theme.color.foreground, fontSize: theme.fontSize.md || theme.fontSize.base },
+                  ]}
+                >
                   Supporting Image
                 </Text>
               </View>
@@ -293,7 +336,11 @@ export function FieldRenderer({
               <Text
                 style={[
                   styles.imageCaption,
-                  { color: theme.color.description, borderTopColor: theme.color.border },
+                  {
+                    color: theme.color.description,
+                    borderTopColor: theme.color.border,
+                    fontSize: theme.fontSize.sm,
+                  },
                 ]}
               >
                 {label}
@@ -322,7 +369,7 @@ export function FieldRenderer({
   // LabelField content (no input, just label)
   if (isLabelField) {
     return (
-      <View style={{ marginBottom: 16 }}>
+      <View style={fieldContainerStyle}>
         {labelNode}
         {subtextNode}
         {inlineImageNode}
@@ -335,7 +382,7 @@ export function FieldRenderer({
   // Side label layout
   if (isLabelSide) {
     return (
-      <View style={{ marginBottom: 16, flexDirection: 'row' }}>
+      <View style={[fieldContainerStyle, { flexDirection: 'row' }]}>
         <View style={{ width: `${labelWidthPercent}%`, marginRight: 12 }}>
           {labelNode}
           {subtextNode}
@@ -353,7 +400,7 @@ export function FieldRenderer({
 
   // Top label layout (default)
   return (
-    <View style={{ marginBottom: 16 }}>
+    <View style={fieldContainerStyle}>
       {labelNode}
       {subtextNode}
       {inlineImageNode}
@@ -386,7 +433,6 @@ const styles = {
     opacity: 0.6,
   },
   subtextDescription: {
-    fontSize: 13,
     marginTop: 2,
     marginBottom: 4,
     lineHeight: 18,
@@ -452,17 +498,14 @@ const styles = {
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
   },
   modalFieldLabel: {
-    fontSize: 15,
     fontWeight: '600',
     marginBottom: 8,
   },
   modalDescription: {
-    fontSize: 14,
     lineHeight: 20,
   },
   modalFooter: {
@@ -487,7 +530,6 @@ const styles = {
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    fontSize: 14,
     textAlign: 'center',
   },
 };

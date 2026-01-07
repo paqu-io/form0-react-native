@@ -678,25 +678,75 @@ export function FormRenderer({
         ? sectionMeta?.[activeDrilldownSectionId]?.path || []
         : [];
 
+      // Use a fallback theme if not provided (for backwards compatibility)
+      const t = theme || {
+        color: {
+          background: '#ffffff',
+          border: '#e5e7eb',
+          section: '#f9fafb',
+          sectionBorder: '#e5e7eb',
+          sectionHeader: '#111111',
+          foreground: '#111111',
+          description: '#6b7280',
+          buttonBg: '#ff007a',
+          buttonFg: '#ffffff',
+          buttonHoverBg: '#d6006b',
+          cancelBg: '#f3f4f6',
+          cancelFg: '#374151',
+          cancelHoverBg: '#e5e7eb',
+          primary: '#111111',
+        },
+        spacing: {
+          xs: 2,
+          sm: 4,
+          md: 8,
+          lg: 16,
+          xl: 24,
+        },
+        fontSize: {
+          xs: 12,
+          subtext: 13,
+          sm: 14,
+          base: 15,
+          md: 16,
+          lg: 17,
+          section: 18,
+          xl: 20,
+          xxl: 24,
+        },
+        borderRadius: {
+          md: 6,
+          lg: 8,
+          full: 999,
+        },
+        fontWeight: {
+          bold: '700',
+        },
+      };
+
+      const sectionBorderColor = t.color.sectionBorder || t.color.border;
+      const sectionCardStyle = {
+        borderWidth: 1,
+        borderColor: sectionBorderColor,
+        borderRadius: t.borderRadius?.md ?? 6,
+        backgroundColor: t.color.background,
+        marginBottom: t.spacing.lg,
+        overflow: 'hidden',
+      };
+      const sectionHeaderBandStyle = {
+        backgroundColor: t.color.section,
+        paddingVertical: t.spacing.sm,
+        paddingHorizontal: t.spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: sectionBorderColor,
+      };
+      const sectionBodyStyle = {
+        paddingVertical: t.spacing.sm,
+        paddingHorizontal: t.spacing.md,
+      };
+
       return items.map((field) => {
         if (!field) return null;
-
-        // Use a fallback theme if not provided (for backwards compatibility)
-        const t = theme || {
-          color: {
-            border: '#e5e7eb',
-            section: '#f9fafb',
-            foreground: '#111111',
-            description: '#6b7280',
-            buttonBg: '#ff007a',
-            buttonFg: '#ffffff',
-            buttonHoverBg: '#d6006b',
-            cancelBg: '#f3f4f6',
-            cancelFg: '#374151',
-            cancelHoverBg: '#e5e7eb',
-            primary: '#111111',
-          },
-        };
 
         if (activeDrilldownSectionId) {
           if (SECTION_LIKE_TYPES.has(field.type)) {
@@ -757,7 +807,7 @@ export function FormRenderer({
             backgroundColor: count === 0 ? t.color.cancelBg : t.color.bannerEditBg || '#e0e7ff',
           };
           const countTextStyle = {
-            fontSize: 12,
+            fontSize: t.fontSize.xs,
             color: count === 0 ? t.color.description : t.color.bannerEditFg || '#1f2937',
             fontWeight: '600',
           };
@@ -788,7 +838,7 @@ export function FormRenderer({
                   <Text
                     style={{
                       fontWeight: '600',
-                      fontSize: 15,
+                      fontSize: t.fontSize.base,
                       color: t.color.sectionHeader || t.color.foreground,
                     }}
                     numberOfLines={1}
@@ -816,7 +866,7 @@ export function FormRenderer({
                     gap: 4,
                   })}
                 >
-                  <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: 14 }}>
+                  <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: t.fontSize.sm }}>
                     View
                   </Text>
                   <ChevronRight size={16} color={t.color.foreground} strokeWidth={2} />
@@ -876,7 +926,7 @@ export function FormRenderer({
                     <Text
                       style={{
                         fontWeight: '600',
-                        fontSize: 15,
+                        fontSize: t.fontSize.base,
                         color: t.color.sectionHeader || t.color.foreground,
                         flex: 1,
                       }}
@@ -900,7 +950,7 @@ export function FormRenderer({
                         gap: 4,
                       })}
                     >
-                      <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: 14 }}>
+                      <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: t.fontSize.sm }}>
                         View
                       </Text>
                       <ChevronRight size={16} color={t.color.foreground} strokeWidth={2} />
@@ -936,36 +986,49 @@ export function FormRenderer({
             if (isCurrentLevelActive) {
               // Active drilldown section - render with header and content
               return (
-                <View key={sectionId} style={{ marginBottom: 16 }}>
-                  <Text
-                    style={{
-                      fontWeight: t.fontWeight.bold,
-                      fontSize: 18,
-                      marginBottom: 8,
-                      color: t.color.sectionHeader || t.color.foreground,
-                    }}
-                  >
-                    {field.label}
-                  </Text>
-                  {field.description ? (
-                    <Text style={{ color: t.color.description, marginBottom: 12 }}>
-                      {field.description}
-                    </Text>
+                <View key={sectionId} style={sectionCardStyle}>
+                  {field.label || field.description ? (
+                    <View style={sectionHeaderBandStyle}>
+                      {field.label ? (
+                        <Text
+                          style={{
+                            fontWeight: t.fontWeight.bold,
+                            fontSize: t.fontSize.section || t.fontSize.lg,
+                            color: t.color.sectionHeader || t.color.foreground,
+                          }}
+                        >
+                          {field.label}
+                        </Text>
+                      ) : null}
+                      {field.description ? (
+                        <Text
+                          style={{
+                            color: t.color.description,
+                            marginTop: t.spacing.xs,
+                            fontSize: t.fontSize.sm,
+                          }}
+                        >
+                          {field.description}
+                        </Text>
+                      ) : null}
+                    </View>
                   ) : null}
-                  {renderElements(field.elements || [], {
-                    state,
-                    setValue: applyValue,
-                    readOnly,
-                    submitCount: localSubmitCount,
-                    controller,
-                    parentPath,
-                    onFieldFocus,
-                    theme,
-                    activeDrilldownPath: drilldownPath,
-                    sectionMetadata: sectionMeta,
-                    onDrilldownNavigate,
-                    parentSectionPath: sectionPath,
-                  })}
+                  <View style={sectionBodyStyle}>
+                    {renderElements(field.elements || [], {
+                      state,
+                      setValue: applyValue,
+                      readOnly,
+                      submitCount: localSubmitCount,
+                      controller,
+                      parentPath,
+                      onFieldFocus,
+                      theme,
+                      activeDrilldownPath: drilldownPath,
+                      sectionMetadata: sectionMeta,
+                      onDrilldownNavigate,
+                      parentSectionPath: sectionPath,
+                    })}
+                  </View>
                 </View>
               );
             }
@@ -973,24 +1036,34 @@ export function FormRenderer({
 
           // Inline section (default) - render normally
           return (
-            <View key={sectionId || Math.random().toString(36)} style={{ marginBottom: 16 }}>
-              {field.label ? (
-                <Text
-                  style={{
-                    fontWeight: t.fontWeight.bold,
-                    marginBottom: 8,
-                    color: t.color.sectionHeader || t.color.foreground,
-                  }}
-                >
-                  {field.label}
-                </Text>
+            <View key={sectionId || Math.random().toString(36)} style={sectionCardStyle}>
+              {field.label || field.description ? (
+                <View style={sectionHeaderBandStyle}>
+                  {field.label ? (
+                    <Text
+                      style={{
+                        fontWeight: t.fontWeight.bold,
+                        fontSize: t.fontSize.base,
+                        color: t.color.sectionHeader || t.color.foreground,
+                      }}
+                    >
+                      {field.label}
+                    </Text>
+                  ) : null}
+                  {field.description ? (
+                    <Text
+                      style={{
+                        color: t.color.description,
+                        marginTop: t.spacing.xs,
+                        fontSize: t.fontSize.sm,
+                      }}
+                    >
+                      {field.description}
+                    </Text>
+                  ) : null}
+                </View>
               ) : null}
-              {field.description ? (
-                <Text style={{ color: t.color.description, marginBottom: 8 }}>
-                  {field.description}
-                </Text>
-              ) : null}
-              <View style={{ paddingLeft: 8 }}>
+              <View style={sectionBodyStyle}>
                 {renderElements(field.elements || [], {
                   state,
                   setValue: applyValue,
@@ -1492,7 +1565,7 @@ function RepeatableListScreen({
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text
             style={{
-              fontSize: 20,
+              fontSize: theme.fontSize.xl,
               fontWeight: theme.fontWeight.bold,
               flex: 1,
               color: theme.color.foreground,
@@ -1509,7 +1582,13 @@ function RepeatableListScreen({
                 backgroundColor: theme.color.bannerViewBg,
               }}
             >
-              <Text style={{ fontSize: 12, color: theme.color.bannerViewFg, fontWeight: '600' }}>
+              <Text
+                style={{
+                  fontSize: theme.fontSize.xs,
+                  color: theme.color.bannerViewFg,
+                  fontWeight: '600',
+                }}
+              >
                 View
               </Text>
             </View>
@@ -1718,7 +1797,7 @@ function RepeatableEditorScreen({
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text
             style={{
-              fontSize: 20,
+              fontSize: theme.fontSize.xl,
               fontWeight: theme.fontWeight.bold,
               flex: 1,
               color: theme.color.foreground,
@@ -1735,7 +1814,13 @@ function RepeatableEditorScreen({
                 backgroundColor: theme.color.bannerViewBg,
               }}
             >
-              <Text style={{ fontSize: 12, color: theme.color.bannerViewFg, fontWeight: '600' }}>
+              <Text
+                style={{
+                  fontSize: theme.fontSize.xs,
+                  color: theme.color.bannerViewFg,
+                  fontWeight: '600',
+                }}
+              >
                 View
               </Text>
             </View>

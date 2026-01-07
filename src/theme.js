@@ -114,10 +114,14 @@ export const lightTheme = {
   // Font sizes
   fontSize: {
     xs: 12,
+    subtext: 13,
     sm: 14, // 0.875rem (base)
     base: 15,
+    md: 16,
     lg: 17,
+    section: 18,
     xl: 20,
+    xxl: 24,
   },
 
   // Font weights
@@ -243,10 +247,14 @@ export const darkTheme = {
   // Font sizes
   fontSize: {
     xs: 12,
+    subtext: 13,
     sm: 14,
     base: 15,
+    md: 16,
     lg: 17,
+    section: 18,
     xl: 20,
+    xxl: 24,
   },
 
   // Font weights

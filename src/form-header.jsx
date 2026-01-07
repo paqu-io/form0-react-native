@@ -110,7 +110,14 @@ function ActionButton({ action, theme, position }) {
       {iconPosition === 'left' && Icon && (
         <Icon size={16} color={buttonStyle.textColor} strokeWidth={2} />
       )}
-      <Text style={[styles.buttonText, { color: buttonStyle.textColor }]}>{label}</Text>
+      <Text
+        style={[
+          styles.buttonText,
+          { color: buttonStyle.textColor, fontSize: theme.fontSize.base },
+        ]}
+      >
+        {label}
+      </Text>
       {iconPosition === 'right' && Icon && (
         <Icon size={16} color={buttonStyle.textColor} strokeWidth={2} />
       )}
@@ -217,7 +224,11 @@ export function FormHeader({
 
         <View style={styles.titleContainer}>
           {formName ? (
-            <Text style={[styles.title, { color: titleColor }]} numberOfLines={1} ellipsizeMode="tail">
+            <Text
+              style={[styles.title, { color: titleColor, fontSize: theme.fontSize.lg }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {formName}
             </Text>
           ) : null}
@@ -264,7 +275,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   title: {
-    fontSize: 17,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -289,7 +299,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   buttonText: {
-    fontSize: 15,
     fontWeight: '500',
   },
 });
