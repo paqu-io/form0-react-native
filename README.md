@@ -1,59 +1,27 @@
 # form0-react-native
 
-## Fonts
+[![NPM Version](https://img.shields.io/npm/v/form0-react-native)](https://www.npmjs.com/package/form0-react-native)
+[![NPM Downloads](https://img.shields.io/npm/dt/form0-react-native)](https://www.npmjs.com/package/form0-react-native)
+![NPM License](https://img.shields.io/npm/l/form0-react-native)
+[![Docs](https://img.shields.io/badge/docs-docs.form0.dev-2563eb)](https://docs.form0.dev)
+[![Website](https://img.shields.io/badge/site-form0.dev-0f172a)](https://form0.dev)
+![NPM Last Update](https://img.shields.io/npm/last-update/form0-react-native)
 
-`form0-react-native` ships with the static Figtree font files and applies the theme
-font family to all internal `Text` and `TextInput` components. The default theme
-maps weights 400/500/600/700 to the matching Figtree families so Android doesn't
-fall back to system bold.
+> [!WARNING]
+> form0 is in active, very early development. Do not use in production. Expect breaking
+> changes and unstable behavior.
 
-### Expo
+form0-react-native is the React Native UI layer of the [form0 ecosystem](https://form0.dev), wrapping the form0-core engine with React Native bindings and a lightweight set of default field renderers. It provides minimal, platform-native components that work on iOS and Android, allowing apps to layer their own design systems on top without rewriting engine integration code.
 
-```js
-import { useFonts } from 'expo-font';
-import { form0Fonts } from 'form0-react-native';
+## 🗂️ Documentation
 
-const [loaded] = useFonts(form0Fonts);
-if (!loaded) return null;
-```
+> [!WARNING]
+> 🚧 Work in progress...
 
-### Bare React Native
+## Requirements
 
-Add the package fonts to your app assets and link them:
+- Node.js 20.19+
 
-```js
-// react-native.config.js (in your app)
-module.exports = {
-  assets: ['./assets/fonts', './node_modules/form0-react-native/src/fonts'],
-};
-```
+## Contributing
 
-Then run:
-
-```bash
-npx react-native-asset
-```
-
-### Custom font family
-
-Override in the theme provider if you need a different font family or weight map:
-
-```js
-import { ThemeProvider } from 'form0-react-native';
-
-<ThemeProvider
-  customTheme={{
-    typography: {
-      fontFamily: 'YourFont-Regular',
-      fontFamilyByWeight: {
-        400: 'YourFont-Regular',
-        500: 'YourFont-Medium',
-        600: 'YourFont-SemiBold',
-        700: 'YourFont-Bold',
-      },
-    },
-  }}
->
-  ...
-</ThemeProvider>;
-```
+Contributions are welcome! Please feel free to submit [issues](https://github.com/paqu-io/form0-react-native/issues) and [pull requests](https://github.com/paqu-io/form0-react-native/pulls).

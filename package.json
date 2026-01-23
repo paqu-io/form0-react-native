@@ -5,9 +5,12 @@
     "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
-  "description": "React native bindings for form0 engine",
+  "description": "React Native bindings for form0 ecosystem.",
   "main": "src/index.js",
   "module": "src/index.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "files": [
     "src"
   ],
@@ -15,7 +18,21 @@
     "build": "echo 'no build step yet'",
     "test": "echo 'no tests yet'"
   },
-  "keywords": [],
+  "keywords": [
+    "form",
+    "form-builder",
+    "form-generator",
+    "form-engine",
+    "schema",
+    "json-schema",
+    "react-native",
+    "dynamic-forms",
+    "ui",
+    "component-library",
+    "design-system",
+    "form-components",
+    "form-ui"
+  ],
   "author": "paqu.io <hello@paqu.io>",
   "contributors": [
     {
@@ -24,7 +41,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "form0-core": "file:../form0-core"
+    "form0-core": "^0.1.0-0"
   },
   "devDependencies": {
     "ignore": "^7.0.5"
@@ -40,5 +57,13 @@
     "react-native-safe-area-context": {
       "optional": true
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paqu-io/form0-react-native.git"
+  },
+  "bugs": {
+    "url": "https://github.com/paqu-io/form0-react-native/issues"
+  },
+  "homepage": "https://form0.dev"
 }
