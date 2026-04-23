@@ -326,6 +326,8 @@ export function FormRenderer({
   onRequestClose,
   showPrimaryActionsInViewMode = true,
   showHeader = true,
+  primaryActionMode = 'submit',
+  primaryActionLabel,
   colorMode = 'light',
   customTheme = null,
   imageResolver = null,
@@ -1125,6 +1127,13 @@ export function FormRenderer({
   const canSubmit = !isReadOnly && typeof onSubmit === 'function';
   const hasSubmitHandler = typeof onSubmit === 'function';
   const activeRepeatableScreen = repeatableStack[repeatableStack.length - 1] || null;
+  const shouldValidatePrimaryAction = primaryActionMode !== 'save';
+  const resolvedPrimaryActionLabel =
+    typeof primaryActionLabel === 'string' && primaryActionLabel.trim().length > 0
+      ? primaryActionLabel.trim()
+      : primaryActionMode === 'save'
+        ? 'Save'
+        : 'Submit';
 
   // Request cancel with discard confirmation if there are changes
   const requestCancel = useCallback(() => {
@@ -1152,11 +1161,13 @@ export function FormRenderer({
 
   // Handle form submission
   const handleFormSubmit = useCallback(() => {
-    setSubmitCount((count) => count + 1);
+    if (shouldValidatePrimaryAction) {
+      setSubmitCount((count) => count + 1);
+    }
     if (onSubmit) {
       onSubmit(submit(), { repeatable: cloneDeep(repeatableState) });
     }
-  }, [onSubmit, submit, repeatableState]);
+  }, [onSubmit, repeatableState, shouldValidatePrimaryAction, submit]);
 
   const getRepeatableEntryTitle = (field, instance, index) => {
     const titleFieldDataName = field?.title_field?.data_name;
@@ -1373,6 +1384,7 @@ export function FormRenderer({
         labelPosition={labelPosition}
         labelWidthPercent={labelWidthPercent}
         readOnly={isReadOnly}
+        validateBeforeSave={shouldValidatePrimaryAction}
         keyboardScrollOffset={keyboardScrollOffset}
         theme={theme}
       />
@@ -1392,6 +1404,8 @@ export function FormRenderer({
             handleFormSubmit={hasSubmitHandler ? handleFormSubmit : undefined}
             enterEditMode={enterEditMode}
             canSubmit={canSubmit}
+            primaryActionMode={primaryActionMode}
+            primaryActionLabel={resolvedPrimaryActionLabel}
             showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
             renderRepeatableScreen={renderRepeatableScreen}
             renderMainFormContent={renderMainFormContent}
@@ -1421,6 +1435,8 @@ function FormRendererInner({
   handleFormSubmit,
   enterEditMode,
   canSubmit,
+  primaryActionMode,
+  primaryActionLabel,
   showPrimaryActionsInViewMode,
   renderRepeatableScreen,
   renderMainFormContent,
@@ -1481,8 +1497,8 @@ function FormRendererInner({
     // Right action: Submit or Save based on context (edit mode only)
     if (isRootPage && typeof handleFormSubmit === 'function') {
       rightAction = {
-        id: 'submit',
-        label: 'Submit',
+        id: primaryActionMode === 'save' ? 'save' : 'submit',
+        label: primaryActionLabel,
         variant: 'primary',
         onPress: handleFormSubmit,
         disabled: !canSubmit,
@@ -1513,6 +1529,8 @@ function FormRendererInner({
     isReadOnly,
     isRepeatableFirstPage,
     isRootPage,
+    primaryActionLabel,
+    primaryActionMode,
     popDrilldownLevel,
     requestCancel,
   ]);
@@ -1707,6 +1725,7 @@ function RepeatableEditorScreen({
   labelPosition,
   labelWidthPercent,
   readOnly,
+  validateBeforeSave = true,
   keyboardScrollOffset,
   theme,
 }) {
@@ -1765,19 +1784,21 @@ function RepeatableEditorScreen({
   );
 
   const handleSave = () => {
-    setSubmitCount((count) => count + 1);
-    const fields = screen.repInfo?.field?.elements || [];
-    let hasErrors = false;
-    fields.forEach((field) => {
-      if (!field?.data_name) return;
-      if (visible?.[field.data_name] === false) return;
-      const isRequired = Boolean(required?.[field.data_name]);
-      if (isRequired && isFieldValueEmpty(field, values?.[field.data_name])) {
-        hasErrors = true;
+    if (validateBeforeSave) {
+      setSubmitCount((count) => count + 1);
+      const fields = screen.repInfo?.field?.elements || [];
+      let hasErrors = false;
+      fields.forEach((field) => {
+        if (!field?.data_name) return;
+        if (visible?.[field.data_name] === false) return;
+        const isRequired = Boolean(required?.[field.data_name]);
+        if (isRequired && isFieldValueEmpty(field, values?.[field.data_name])) {
+          hasErrors = true;
+        }
+      });
+      if (hasErrors) {
+        return;
       }
-    });
-    if (hasErrors) {
-      return;
     }
     const payload = {
       ...(initialInstance || {}),
