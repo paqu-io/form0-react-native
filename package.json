@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build": "echo 'no build step yet'",
-    "test": "node tests/field-registry.test.mjs"
+    "test": "node --test tests/*.test.mjs"
   },
   "keywords": [
     "form",
@@ -41,7 +41,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "form0-core": "^0.1.19"
+    "form0-core": "^0.1.22"
   },
   "devDependencies": {
     "ignore": "^7.0.5"

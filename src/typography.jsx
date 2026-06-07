@@ -104,7 +104,7 @@ export function Text({ style, ...props }) {
   return <RNText {...props} style={withBaseStyle} />;
 }
 
-export function TextInput({ style, ...props }) {
+export const TextInput = React.forwardRef(function TextInput({ style, ...props }, ref) {
   const { theme } = useTheme();
   const { fontFamily, stripWeight, stripStyle } = resolveFontFamily(theme, style);
   const cleanedStyle =
@@ -118,5 +118,5 @@ export function TextInput({ style, ...props }) {
   const baseStyle = theme?.fontSize?.base ? { fontSize: theme.fontSize.base } : null;
   const withBaseStyle = prependBaseStyle(mergedStyle, baseStyle);
 
-  return <RNTextInput {...props} style={withBaseStyle} />;
-}
+  return <RNTextInput ref={ref} {...props} style={withBaseStyle} />;
+});
