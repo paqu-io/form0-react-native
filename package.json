@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build": "echo 'no build step yet'",
-    "test": "echo 'no tests yet'"
+    "test": "node tests/field-registry.test.mjs"
   },
   "keywords": [
     "form",

@@ -13,6 +13,27 @@
 
 form0-react-native is the React Native UI layer of the [form0 ecosystem](https://form0.dev), wrapping the form0-core engine with React Native bindings and a lightweight set of default field renderers. It provides minimal, platform-native components that work on iOS and Android, allowing apps to layer their own design systems on top without rewriting engine integration code.
 
+## Renderer overrides
+
+`FormRenderer` accepts a `renderers` prop so apps can replace or extend field components without forking the package.
+
+```jsx
+import { FormRenderer } from 'form0-react-native';
+
+const renderers = {
+  PhotoField: CustomPhotoField,
+  VideoField: CustomVideoField,
+};
+
+<FormRenderer schema={schema} renderers={renderers} />;
+```
+
+This is the preferred integration point for app-specific media capture, upload flows, and branding.
+
+## Repeatable sections
+
+`RepeatableSection` already uses the package drilldown flow by default. The core package owns the repeatable state contract and nested save behavior, while product-specific styling and action wording should stay in the consuming app.
+
 ## 🗂️ Documentation
 
 > [!WARNING]
