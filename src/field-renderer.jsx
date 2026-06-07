@@ -19,6 +19,7 @@ export function FieldRenderer({
   labelWidthPercent = 30,
   onKeyDown,
   onFocus,
+  inputRef,
   showError = true,
 }) {
   const registry = useFieldRegistry();
@@ -181,6 +182,7 @@ export function FieldRenderer({
     readOnly,
     required,
     onFocus,
+    ref: inputRef,
   };
 
   const fieldInput = isLabelField ? null : (

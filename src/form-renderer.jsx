@@ -5,7 +5,6 @@ import { FieldRegistryProvider } from './field-registry-context.jsx';
 import { Text } from './typography.jsx';
 import {
   ScrollView,
-  Button,
   View,
   Pressable,
   KeyboardAvoidingView,
@@ -15,8 +14,8 @@ import {
   findNodeHandle,
   useWindowDimensions,
   Alert,
+  Modal,
 } from 'react-native';
-import { isFieldValueEmpty } from './helpers/is-field-value-empty.js';
 import {
   buildRepeatableInfo,
   cloneDeep,
@@ -27,6 +26,19 @@ import { FormHeader } from './form-header.jsx';
 import { ThemeProvider, useTheme } from './theme-context.jsx';
 import { ImageResolverProvider } from './image-resolver-context.jsx';
 import { ChevronRight } from 'lucide-react-native';
+import {
+  buildRepeatableParentValues,
+  getRepeatableInstances as getRepeatableInstancesFromState,
+  getRepeatableInstance as getRepeatableInstanceFromState,
+  setRepeatableInstancesInState,
+} from './utils/repeatable-state.js';
+import {
+  buildValidationSummary,
+  collectValidatableFields,
+  getFirstValidationIssue,
+  getRepeatableAddLabel,
+} from './utils/repeatable-validation.js';
+import { isFieldValueEmpty } from './helpers/is-field-value-empty.js';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
 const SECTION_LIKE_TYPES = new Set(['Section', 'RepeatableSection', 'BuildingPlanSection']);
@@ -283,6 +295,7 @@ function useKeyboardAwareScroll({ scrollOffset = DEFAULT_SCROLL_OFFSET } = {}) {
     onScroll: handleScroll,
     onFieldFocus: handleFieldFocus,
     onLayout: updateScrollLayout,
+    scrollToTarget,
   };
 }
 
@@ -346,6 +359,7 @@ export function FormRenderer({
   const [submitCount, setSubmitCount] = useState(0);
   const [repeatableState, setRepeatableState] = useState({});
   const [repeatableStack, setRepeatableStack] = useState([]);
+  const repeatableScreenIdRef = useRef(0);
 
   // Interaction mode state (allows switching between edit/readonly at runtime)
   const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
@@ -353,6 +367,7 @@ export function FormRenderer({
 
   // Track changes for discard prompt
   const initialValuesRef = useRef(initialValues);
+  const initialRepeatableStateRef = useRef({});
   const [hasChanges, setHasChanges] = useState(false);
 
   // Sync interaction mode when prop changes
@@ -363,9 +378,11 @@ export function FormRenderer({
 
   // Detect changes by comparing current values to initial values
   useEffect(() => {
-    const changed = !deepEqual(values, initialValuesRef.current);
+    const changed =
+      !deepEqual(values, initialValuesRef.current) ||
+      !deepEqual(repeatableState, initialRepeatableStateRef.current);
     setHasChanges(changed);
-  }, [values]);
+  }, [repeatableState, values]);
 
   const enterEditMode = useCallback(() => {
     setInteractionMode('edit');
@@ -437,149 +454,36 @@ export function FormRenderer({
     setActiveDrilldownPath(nextDrilldownPath);
   }, [activeDrilldownSectionId, sectionMetadata]);
 
-  const resolveRepeatableContainer = useCallback(
-    (state, path = [], { createIfMissing = false } = {}) => {
-      let container = state || {};
-      if (!Array.isArray(path) || path.length === 0) {
-        return container;
-      }
-      for (const segment of path) {
-        if (!segment || typeof segment.key !== 'string') {
-          return null;
-        }
-        const list = container?.[segment.key];
-        if (!Array.isArray(list)) {
-          return null;
-        }
-        const targetIndex = list.findIndex((instance) => instance.id === segment.id);
-        if (targetIndex === -1) {
-          return null;
-        }
-        const target = list[targetIndex];
-        if (!target.repeatable || typeof target.repeatable !== 'object') {
-          if (createIfMissing) {
-            target.repeatable = {};
-          } else {
-            return null;
-          }
-        }
-        container = target.repeatable;
-      }
-      return container;
-    },
-    []
-  );
-
   const getRepeatableInstances = useCallback(
     (repeatableKey, parentPath = []) => {
-      const container = resolveRepeatableContainer(repeatableState, parentPath);
-      const list = container?.[repeatableKey];
-      return Array.isArray(list) ? list : [];
+      return getRepeatableInstancesFromState(repeatableState, repeatableKey, parentPath);
     },
-    [repeatableState, resolveRepeatableContainer]
+    [repeatableState]
   );
 
   const getRepeatableInstance = useCallback(
     (repeatableKey, instanceId, parentPath = []) => {
-      const list = getRepeatableInstances(repeatableKey, parentPath);
-      return list.find((instance) => instance.id === instanceId) || null;
+      return getRepeatableInstanceFromState(repeatableState, repeatableKey, instanceId, parentPath);
     },
-    [getRepeatableInstances]
+    [repeatableState]
   );
 
   const setRepeatableInstances = useCallback(
     (repeatableKey, instances = [], parentPath = []) => {
-      setRepeatableState((prev) => {
-        const base = prev && typeof prev === 'object' ? prev : {};
-        const draft = cloneDeep(base);
-        const container =
-          resolveRepeatableContainer(draft, parentPath, { createIfMissing: true }) || draft;
-        container[repeatableKey] = Array.isArray(instances) ? cloneDeep(instances) : [];
-        return draft;
-      });
+      setRepeatableState((prev) => setRepeatableInstancesInState(prev, repeatableKey, instances, parentPath));
     },
-    [resolveRepeatableContainer]
-  );
-
-  const addRepeatableInstance = useCallback(
-    (repeatableKey, instance, parentPath = []) => {
-      setRepeatableState((prev) => {
-        const base = prev && typeof prev === 'object' ? prev : {};
-        const draft = cloneDeep(base);
-        const container =
-          resolveRepeatableContainer(draft, parentPath, { createIfMissing: true }) || draft;
-        if (!Array.isArray(container[repeatableKey])) {
-          container[repeatableKey] = [];
-        }
-        container[repeatableKey].push(instance);
-        return draft;
-      });
-    },
-    [resolveRepeatableContainer]
-  );
-
-  const updateRepeatableInstance = useCallback(
-    (repeatableKey, instanceId, payload, parentPath = []) => {
-      setRepeatableState((prev) => {
-        const base = prev && typeof prev === 'object' ? prev : {};
-        const draft = cloneDeep(base);
-        const container = resolveRepeatableContainer(draft, parentPath);
-        if (!container) {
-          return base;
-        }
-        const list = container[repeatableKey];
-        if (!Array.isArray(list)) {
-          return base;
-        }
-        const index = list.findIndex((instance) => instance.id === instanceId);
-        if (index === -1) {
-          return base;
-        }
-        list[index] = payload;
-        return draft;
-      });
-    },
-    [resolveRepeatableContainer]
-  );
-
-  const removeRepeatableInstance = useCallback(
-    (repeatableKey, instanceId, parentPath = []) => {
-      setRepeatableState((prev) => {
-        const base = prev && typeof prev === 'object' ? prev : {};
-        const draft = cloneDeep(base);
-        const container = resolveRepeatableContainer(draft, parentPath);
-        if (!container) {
-          return base;
-        }
-        const list = container[repeatableKey];
-        if (!Array.isArray(list)) {
-          return base;
-        }
-        const index = list.findIndex((instance) => instance.id === instanceId);
-        if (index === -1) {
-          return base;
-        }
-        list.splice(index, 1);
-        return draft;
-      });
-    },
-    [resolveRepeatableContainer]
+    []
   );
 
   const buildParentValuesForPath = useCallback(
     (path = []) => {
-      let merged = { ...values };
-      const traversePath = [];
-      path.forEach(({ key, id }) => {
-        const instance = getRepeatableInstance(key, id, traversePath);
-        if (instance?.values) {
-          merged = { ...merged, ...instance.values };
-        }
-        traversePath.push({ key, id });
+      return buildRepeatableParentValues({
+        seedValues: values,
+        repeatableState,
+        path,
       });
-      return merged;
     },
-    [getRepeatableInstance, values]
+    [repeatableState, values]
   );
 
   const formRepeatableController = useMemo(
@@ -609,7 +513,14 @@ export function FormRenderer({
   }, []);
 
   const pushRepeatableScreen = useCallback((screen) => {
-    setRepeatableStack((prev) => [...prev, screen]);
+    repeatableScreenIdRef.current += 1;
+    setRepeatableStack((prev) => [
+      ...prev,
+      {
+        ...screen,
+        screenId: `repeatable-screen-${repeatableScreenIdRef.current}`,
+      },
+    ]);
   }, []);
 
   const popRepeatableScreen = useCallback(() => {
@@ -666,6 +577,8 @@ export function FormRenderer({
         controller,
         parentPath = [],
         onFieldFocus,
+        registerFieldContainer,
+        registerFieldInput,
         theme,
         // Drilldown state passed from parent
         activeDrilldownPath: drilldownPath = [],
@@ -1104,20 +1017,33 @@ export function FormRenderer({
         const fieldError = engineError || requiredError;
 
         return (
-          <FieldRenderer
+          <View
             key={field.key || dataName}
-            field={field}
-            value={fieldValue}
-            readOnly={fieldReadOnly}
-            required={fieldRequired}
-            error={fieldError}
-            labelPosition={labelPosition}
-            labelWidthPercent={labelWidthPercent}
-            onFocus={onFieldFocus}
-            onChange={(val) => {
-              if (dataName) applyValue(dataName, val);
-            }}
-          />
+            ref={
+              dataName && typeof registerFieldContainer === 'function'
+                ? (node) => registerFieldContainer(dataName, node)
+                : undefined
+            }
+          >
+            <FieldRenderer
+              field={field}
+              value={fieldValue}
+              readOnly={fieldReadOnly}
+              required={fieldRequired}
+              error={fieldError}
+              labelPosition={labelPosition}
+              labelWidthPercent={labelWidthPercent}
+              onFocus={onFieldFocus}
+              inputRef={
+                dataName && typeof registerFieldInput === 'function'
+                  ? (node) => registerFieldInput(dataName, node)
+                  : undefined
+              }
+              onChange={(val) => {
+                if (dataName) applyValue(dataName, val);
+              }}
+            />
+          </View>
         );
       });
     },
@@ -1183,103 +1109,6 @@ export function FormRenderer({
     return `${field?.label || 'Entry'} ${index + 1}`;
   };
 
-  const getChoiceLabel = (field, choice) => {
-    if (!choice) return '';
-    if (typeof choice.label === 'string' && choice.label.trim() !== '') {
-      return choice.label.trim();
-    }
-    if (choice.value != null) {
-      const match = Array.isArray(field?.choices)
-        ? field.choices.find((c) => c?.value === choice.value)
-        : null;
-      if (match && typeof match.label === 'string' && match.label.trim() !== '') {
-        return match.label.trim();
-      }
-      return String(choice.value);
-    }
-    return '';
-  };
-
-  const formatFieldValue = (field, value) => {
-    if (value == null) return '';
-    switch (field.type) {
-      case 'SingleChoiceField':
-      case 'BooleanField': {
-        const choiceLabels = Array.isArray(value?.choice)
-          ? value.choice.map((choice) => getChoiceLabel(field, choice)).filter(Boolean)
-          : [];
-        const otherLabels = Array.isArray(value?.other)
-          ? value.other
-              .map((entry) => {
-                if (typeof entry === 'string') return entry.trim();
-                if (typeof entry?.label === 'string') return entry.label.trim();
-                if (entry?.value != null) return String(entry.value);
-                return '';
-              })
-              .filter(Boolean)
-          : [];
-        const combined = [...choiceLabels, ...otherLabels];
-        return combined.join(', ');
-      }
-      case 'MultiChoiceField': {
-        const choiceLabels = Array.isArray(value?.choices)
-          ? value.choices.map((choice) => getChoiceLabel(field, choice)).filter(Boolean)
-          : [];
-        const otherLabels = Array.isArray(value?.other)
-          ? value.other
-              .map((entry) => {
-                if (typeof entry === 'string') return entry.trim();
-                if (typeof entry?.label === 'string') return entry.label.trim();
-                if (entry?.value != null) return String(entry.value);
-                return '';
-              })
-              .filter(Boolean)
-          : [];
-        const combined = [...choiceLabels, ...otherLabels];
-        return combined.join(', ');
-      }
-      case 'PhotoField':
-      case 'VideoField':
-        if (Array.isArray(value)) {
-          return `${value.length} item${value.length === 1 ? '' : 's'}`;
-        }
-        return '';
-      case 'SignatureField':
-        return 'Signed';
-      default:
-        if (Array.isArray(value)) {
-          return value.map((entry) => String(entry)).join(', ');
-        }
-        if (typeof value === 'object') {
-          if (value.label) return String(value.label);
-          if (value.value != null) return String(value.value);
-          return '';
-        }
-        return String(value);
-    }
-  };
-
-  const buildRepeatableSummaryLines = (repInfo, instance, maxLines = 3) => {
-    if (!repInfo?.fields) return [];
-    const lines = [];
-    repInfo.fields.forEach((fieldInfo, dataName) => {
-      if (lines.length >= maxLines) {
-        return;
-      }
-      const field = fieldInfo?.field;
-      if (!field) return;
-      const value = instance?.values?.[dataName];
-      if (isFieldValueEmpty(field, value)) return;
-      const formatted = formatFieldValue(field, value);
-      if (!formatted) return;
-      lines.push({
-        label: field.label || dataName,
-        value: formatted,
-      });
-    });
-    return lines;
-  };
-
   const handleRepeatableSave = useCallback(
     (screen, payload) => {
       if (!screen?.controller) {
@@ -1329,67 +1158,74 @@ export function FormRenderer({
     </KeyboardFormScrollView>
   );
 
-  // Render repeatable screens (list or editor)
-  const renderRepeatableScreen = (theme) => {
-    if (activeRepeatableScreen.type === 'list') {
-      return (
-        <RepeatableListScreen
-          screen={activeRepeatableScreen}
-          onBack={popRepeatableScreen}
-          onEdit={(instanceId) =>
-            openRepeatableEditor({
-              ...activeRepeatableScreen,
-              instanceId,
-              mode: 'edit',
-            })
-          }
-          onAdd={() => {
-            const draft = createEmptyRepeatableInstance(activeRepeatableScreen.repInfo);
-            openRepeatableEditor({
-              ...activeRepeatableScreen,
-              instanceId: draft.id,
-              mode: 'create',
-              draft,
-            });
-          }}
-          onRemove={(instanceId) =>
-            activeRepeatableScreen.controller?.setInstances(
-              activeRepeatableScreen.repeatableKey,
-              activeRepeatableScreen.controller
-                ?.getInstances(
-                  activeRepeatableScreen.repeatableKey,
-                  activeRepeatableScreen.parentPath
+  const renderRepeatableScreens = (theme) => (
+    <View style={{ flex: 1 }}>
+      {repeatableStack.map((screen, index) => {
+        const isActive = index === repeatableStack.length - 1;
+        const screenNode =
+          screen.type === 'list' ? (
+            <RepeatableListScreen
+              screen={screen}
+              onBack={popRepeatableScreen}
+              onEdit={(instanceId) =>
+                openRepeatableEditor({
+                  ...screen,
+                  instanceId,
+                  mode: 'edit',
+                })
+              }
+              onAdd={() => {
+                const draft = createEmptyRepeatableInstance(screen.repInfo);
+                openRepeatableEditor({
+                  ...screen,
+                  instanceId: draft.id,
+                  mode: 'create',
+                  draft,
+                });
+              }}
+              onRemove={(instanceId) =>
+                screen.controller?.setInstances(
+                  screen.repeatableKey,
+                  screen.controller
+                    ?.getInstances(screen.repeatableKey, screen.parentPath)
+                    .filter((instance) => instance.id !== instanceId),
+                  screen.parentPath
                 )
-                .filter((instance) => instance.id !== instanceId),
-              activeRepeatableScreen.parentPath
-            )
-          }
-          getEntryTitle={getRepeatableEntryTitle}
-          getEntrySummary={(instance) =>
-            buildRepeatableSummaryLines(activeRepeatableScreen.repInfo, instance)
-          }
-          readOnly={isReadOnly}
-          theme={theme}
-        />
-      );
-    }
+              }
+              getEntryTitle={getRepeatableEntryTitle}
+              readOnly={isReadOnly}
+              theme={theme}
+            />
+          ) : (
+            <RepeatableEditorScreen
+              screen={screen}
+              schema={finalSchema}
+              onBack={popRepeatableScreen}
+              onSave={handleRepeatableSave}
+              renderElements={renderElements}
+              labelPosition={labelPosition}
+              labelWidthPercent={labelWidthPercent}
+              readOnly={isReadOnly}
+              validateBeforeSave={shouldValidatePrimaryAction}
+              keyboardScrollOffset={keyboardScrollOffset}
+              theme={theme}
+            />
+          );
 
-    return (
-      <RepeatableEditorScreen
-        screen={activeRepeatableScreen}
-        schema={finalSchema}
-        onBack={popRepeatableScreen}
-        onSave={handleRepeatableSave}
-        renderElements={renderElements}
-        labelPosition={labelPosition}
-        labelWidthPercent={labelWidthPercent}
-        readOnly={isReadOnly}
-        validateBeforeSave={shouldValidatePrimaryAction}
-        keyboardScrollOffset={keyboardScrollOffset}
-        theme={theme}
-      />
-    );
-  };
+        return (
+          <View
+            key={screen.screenId}
+            style={{
+              flex: 1,
+              display: isActive ? 'flex' : 'none',
+            }}
+          >
+            {screenNode}
+          </View>
+        );
+      })}
+    </View>
+  );
 
   return (
     <ThemeProvider colorMode={colorMode} customTheme={customTheme}>
@@ -1407,7 +1243,7 @@ export function FormRenderer({
             primaryActionMode={primaryActionMode}
             primaryActionLabel={resolvedPrimaryActionLabel}
             showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
-            renderRepeatableScreen={renderRepeatableScreen}
+            renderRepeatableScreens={renderRepeatableScreens}
             renderMainFormContent={renderMainFormContent}
             // Drilldown state props
             isRootPage={isRootPage}
@@ -1438,7 +1274,7 @@ function FormRendererInner({
   primaryActionMode,
   primaryActionLabel,
   showPrimaryActionsInViewMode,
-  renderRepeatableScreen,
+  renderRepeatableScreens,
   renderMainFormContent,
   // Drilldown state props
   isRootPage,
@@ -1554,7 +1390,7 @@ function FormRendererInner({
       )}
 
       {/* Form Content */}
-      {activeRepeatableScreen ? renderRepeatableScreen(theme) : renderMainFormContent(theme)}
+      {activeRepeatableScreen ? renderRepeatableScreens(theme) : renderMainFormContent(theme)}
     </View>
   );
 }
@@ -1566,60 +1402,50 @@ function RepeatableListScreen({
   onAdd,
   onRemove,
   getEntryTitle,
-  getEntrySummary,
   readOnly,
   theme,
 }) {
   const instances =
     screen.controller?.getInstances(screen.repeatableKey, screen.parentPath) || [];
   const label = screen.field?.label || 'Repeatable Section';
+  const description = screen.field?.description || null;
+  const addLabel = getRepeatableAddLabel(screen.field);
+  const leftAction = {
+    id: 'back',
+    label: 'Back',
+    variant: 'back',
+    onPress: onBack,
+  };
+  const rightAction = !readOnly
+    ? {
+        id: 'add-repeatable',
+        label: addLabel,
+        variant: 'primary',
+        onPress: onAdd,
+      }
+    : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <View style={{ padding: 16 }}>
-        <Pressable onPress={onBack} style={{ marginBottom: 8 }}>
-          <Text style={{ color: theme.color.primary }}>← Back</Text>
-        </Pressable>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text
-            style={{
-              fontSize: theme.fontSize.xl,
-              fontWeight: theme.fontWeight.bold,
-              flex: 1,
-              color: theme.color.foreground,
-            }}
-          >
-            {label}
-          </Text>
-          {readOnly ? (
-            <View
-              style={{
-                paddingVertical: 2,
-                paddingHorizontal: 8,
-                borderRadius: 999,
-                backgroundColor: theme.color.bannerViewBg,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.fontSize.xs,
-                  color: theme.color.bannerViewFg,
-                  fontWeight: '600',
-                }}
-              >
-                View
-              </Text>
-            </View>
-          ) : null}
-        </View>
-        <Text style={{ color: theme.color.description, marginTop: 4 }}>
-          {instances.length} item{instances.length === 1 ? '' : 's'}
-        </Text>
-      </View>
+      <FormHeader
+        formName={label}
+        mode={readOnly ? 'readonly' : 'edit'}
+        leftAction={leftAction}
+        rightAction={rightAction}
+        showPrimaryActionsInViewMode={false}
+      />
       <FormScrollView
         contentContainerStyle={{ paddingHorizontal: 16 }}
         style={{ backgroundColor: theme.color.background }}
       >
+        <View style={{ marginBottom: 16 }}>
+          {description ? (
+            <Text style={{ color: theme.color.description, marginBottom: 4 }}>{description}</Text>
+          ) : null}
+          <Text style={{ color: theme.color.description }}>
+            {instances.length} item{instances.length === 1 ? '' : 's'}
+          </Text>
+        </View>
         {instances.length === 0 ? (
           <Text style={{ color: theme.color.description }}>No entries yet.</Text>
         ) : (
@@ -1633,40 +1459,23 @@ function RepeatableListScreen({
                 padding: 14,
                 marginBottom: 12,
                 backgroundColor: theme.color.section,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
             >
-              <Text style={{ fontWeight: '600', marginBottom: 8, color: theme.color.foreground }}>
+              <Text
+                style={{ fontWeight: '600', color: theme.color.foreground, flex: 1, marginRight: 12 }}
+                numberOfLines={1}
+              >
                 {getEntryTitle(screen.field, instance, index)}
               </Text>
-              {getEntrySummary ? (
-                (() => {
-                  const summary = getEntrySummary(instance);
-                  if (!summary || summary.length === 0) {
-                    return (
-                      <Text style={{ color: theme.color.placeholder, marginBottom: 10 }}>
-                        No details yet.
-                      </Text>
-                    );
-                  }
-                  return (
-                    <View style={{ marginBottom: 10 }}>
-                      {summary.map((line, idx) => (
-                        <Text
-                          key={`${instance.id}-summary-${idx}`}
-                          style={{ color: theme.color.description }}
-                          numberOfLines={1}
-                        >
-                          {line.label}: {line.value}
-                        </Text>
-                      ))}
-                    </View>
-                  );
-                })()
-              ) : null}
-              <View style={{ flexDirection: 'row' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Pressable
                   onPress={() => onEdit(instance.id)}
                   style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    alignItems: 'center',
                     paddingVertical: 6,
                     paddingHorizontal: 12,
                     borderRadius: 999,
@@ -1674,9 +1483,8 @@ function RepeatableListScreen({
                     marginRight: 8,
                   })}
                 >
-                  <Text style={{ color: theme.color.cancelFg }}>
-                    {readOnly ? 'View' : 'Edit'}
-                  </Text>
+                  <Text style={{ color: theme.color.cancelFg, marginRight: 4 }}>View</Text>
+                  <ChevronRight size={14} color={theme.color.cancelFg} strokeWidth={2} />
                 </Pressable>
                 {!readOnly && (
                   <Pressable
@@ -1688,7 +1496,7 @@ function RepeatableListScreen({
                       backgroundColor: pressed ? '#fce8e8' : '#fdecec',
                     })}
                   >
-                    <Text style={{ color: theme.color.error }}>Delete</Text>
+                    <Text style={{ color: theme.color.error }}>Remove</Text>
                   </Pressable>
                 )}
               </View>
@@ -1696,22 +1504,6 @@ function RepeatableListScreen({
           ))
         )}
       </FormScrollView>
-      {!readOnly && (
-        <View style={{ padding: 16, backgroundColor: theme.color.background }}>
-          <Pressable
-            onPress={onAdd}
-            style={({ pressed }) => ({
-              paddingVertical: 12,
-              paddingHorizontal: 16,
-              borderRadius: 8,
-              backgroundColor: pressed ? theme.color.buttonHoverBg : theme.color.buttonBg,
-              alignItems: 'center',
-            })}
-          >
-            <Text style={{ color: theme.color.buttonFg, fontWeight: '600' }}>Add entry</Text>
-          </Pressable>
-        </View>
-      )}
     </View>
   );
 }
@@ -1730,6 +1522,8 @@ function RepeatableEditorScreen({
   theme,
 }) {
   const editorScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
+  const fieldContainerRefs = useRef(new Map());
+  const fieldInputRefs = useRef(new Map());
   const initialInstance =
     screen.mode === 'edit'
       ? screen.controller?.getInstance(
@@ -1760,6 +1554,11 @@ function RepeatableEditorScreen({
     initialInstance: initialInstance || createEmptyRepeatableInstance(screen.repInfo),
   });
   const [submitCount, setSubmitCount] = useState(0);
+  const [discardDialogVisible, setDiscardDialogVisible] = useState(false);
+  const initialSnapshotRef = useRef({
+    values: initialInstance?.values || {},
+    repeatable: initialInstance?.repeatable || {},
+  });
 
   const instanceId = initialInstance?.id || screen.instanceId;
   const contextPath = useMemo(
@@ -1782,21 +1581,157 @@ function RepeatableEditorScreen({
       setRepeatableInstances,
     ]
   );
+  const resolveNestedRepeatableKey = useCallback((field) => {
+    if (!field) return null;
+    if (field.key && typeof field.key === 'string' && field.key.trim().length > 0) {
+      return field.key;
+    }
+    return field.data_name || null;
+  }, []);
+  const {
+    sectionMetadata: editorSectionMetadata,
+    fieldToSectionPath: editorFieldToSectionPath,
+  } = useMemo(
+    () => buildSectionHierarchy(screen.repInfo?.field?.elements || [], resolveNestedRepeatableKey),
+    [resolveNestedRepeatableKey, screen.repInfo?.field?.elements]
+  );
+  const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
+  const activeDrilldownSectionId =
+    activeDrilldownPath.length > 0 ? activeDrilldownPath[activeDrilldownPath.length - 1] : null;
+  const activeDrilldownSectionInfo = activeDrilldownSectionId
+    ? editorSectionMetadata[activeDrilldownSectionId]
+    : null;
+  const validationFields = useMemo(
+    () =>
+      collectValidatableFields(screen.repInfo?.field?.elements || [], {
+        includeRepeatableChildren: false,
+      }),
+    [screen.repInfo]
+  );
+
+  useEffect(() => {
+    setSubmitCount(0);
+    setDiscardDialogVisible(false);
+    setActiveDrilldownPath([]);
+    fieldContainerRefs.current.clear();
+    fieldInputRefs.current.clear();
+    initialSnapshotRef.current = {
+      values: initialInstance?.values || {},
+      repeatable: initialInstance?.repeatable || {},
+    };
+  }, [initialInstance, screen.screenId]);
+
+  const hasEntryChanges = useMemo(
+    () =>
+      !deepEqual(values, initialSnapshotRef.current.values) ||
+      !deepEqual(repeatable, initialSnapshotRef.current.repeatable),
+    [repeatable, values]
+  );
+
+  const registerFieldContainer = useCallback((fieldName, node) => {
+    if (!fieldName) return;
+    if (node) {
+      fieldContainerRefs.current.set(fieldName, node);
+      return;
+    }
+    fieldContainerRefs.current.delete(fieldName);
+  }, []);
+
+  const registerFieldInput = useCallback((fieldName, node) => {
+    if (!fieldName) return;
+    if (node) {
+      fieldInputRefs.current.set(fieldName, node);
+      return;
+    }
+    fieldInputRefs.current.delete(fieldName);
+  }, []);
+
+  const focusFieldByName = useCallback(
+    (fieldName) => {
+      if (!fieldName) {
+        return;
+      }
+      const input = fieldInputRefs.current.get(fieldName) || null;
+      const container = fieldContainerRefs.current.get(fieldName) || null;
+      const target = input || container;
+      if (!target) {
+        return;
+      }
+      editorScroll.scrollToTarget(target);
+      if (typeof input?.focus === 'function') {
+        requestAnimationFrame(() => {
+          input.focus();
+        });
+      }
+    },
+    [editorScroll]
+  );
+
+  const pushEditorDrilldownSection = useCallback(
+    (sectionId) => {
+      const section = editorSectionMetadata[sectionId];
+      if (!section) return;
+      setActiveDrilldownPath(section.drilldownPath);
+    },
+    [editorSectionMetadata]
+  );
+
+  const popEditorDrilldownLevel = useCallback(() => {
+    if (!activeDrilldownSectionId) {
+      setActiveDrilldownPath([]);
+      return;
+    }
+    const info = editorSectionMetadata[activeDrilldownSectionId];
+    if (!info) {
+      setActiveDrilldownPath([]);
+      return;
+    }
+    setActiveDrilldownPath(info.drilldownPath.slice(0, -1));
+  }, [activeDrilldownSectionId, editorSectionMetadata]);
+
+  const navigateToValidationIssue = useCallback(
+    (issue) => {
+      if (!issue?.fieldName) {
+        return;
+      }
+      const sectionPath = editorFieldToSectionPath[issue.fieldName];
+      if (Array.isArray(sectionPath) && sectionPath.length > 0) {
+        const targetSectionId = sectionPath[sectionPath.length - 1];
+        const sectionInfo = editorSectionMetadata[targetSectionId];
+        if (sectionInfo) {
+          setActiveDrilldownPath(sectionInfo.drilldownPath);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              focusFieldByName(issue.fieldName);
+            });
+          });
+          return;
+        }
+      }
+      requestAnimationFrame(() => {
+        focusFieldByName(issue.fieldName);
+      });
+    },
+    [editorFieldToSectionPath, editorSectionMetadata, focusFieldByName]
+  );
+
+  const buildEntryValidationSummary = useCallback(
+    () =>
+      buildValidationSummary(validationFields, {
+        getValue: (field) => (field?.data_name ? values?.[field.data_name] : null),
+        isVisible: (field) => !field?.data_name || visible?.[field.data_name] !== false,
+        isRequired: (field) => Boolean(field?.data_name && required?.[field.data_name]),
+        getError: (field) => (field?.data_name ? errors?.[field.data_name] : null),
+      }),
+    [errors, required, validationFields, values, visible]
+  );
 
   const handleSave = () => {
     if (validateBeforeSave) {
       setSubmitCount((count) => count + 1);
-      const fields = screen.repInfo?.field?.elements || [];
-      let hasErrors = false;
-      fields.forEach((field) => {
-        if (!field?.data_name) return;
-        if (visible?.[field.data_name] === false) return;
-        const isRequired = Boolean(required?.[field.data_name]);
-        if (isRequired && isFieldValueEmpty(field, values?.[field.data_name])) {
-          hasErrors = true;
-        }
-      });
-      if (hasErrors) {
+      const validationSummary = buildEntryValidationSummary();
+      if (validationSummary.hasErrors) {
+        navigateToValidationIssue(getFirstValidationIssue(validationSummary));
         return;
       }
     }
@@ -1808,46 +1743,52 @@ function RepeatableEditorScreen({
     };
     onSave(screen, payload);
   };
+  const handleCancelRequest = useCallback(() => {
+    if (activeDrilldownPath.length > 0) {
+      popEditorDrilldownLevel();
+      return;
+    }
+    if (!hasEntryChanges) {
+      onBack();
+      return;
+    }
+    setDiscardDialogVisible(true);
+  }, [activeDrilldownPath.length, hasEntryChanges, onBack, popEditorDrilldownLevel]);
+
+  const leftAction =
+    activeDrilldownPath.length > 0
+      ? {
+          id: 'back',
+          label: 'Back',
+          variant: 'back',
+          onPress: popEditorDrilldownLevel,
+        }
+      : {
+          id: 'cancel',
+          label: 'Cancel',
+          variant: 'cancel',
+          onPress: handleCancelRequest,
+        };
+  const rightAction =
+    !readOnly && activeDrilldownPath.length === 0
+      ? {
+          id: 'save',
+          label: 'Save',
+          variant: 'primary',
+          onPress: handleSave,
+        }
+      : null;
+  const headerTitle = activeDrilldownSectionInfo?.label || screen.field?.label || 'Entry';
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
-      <View style={{ padding: 16, paddingBottom: 0 }}>
-        <Pressable onPress={onBack} style={{ marginBottom: 8 }}>
-          <Text style={{ color: theme.color.primary }}>← Back</Text>
-        </Pressable>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text
-            style={{
-              fontSize: theme.fontSize.xl,
-              fontWeight: theme.fontWeight.bold,
-              flex: 1,
-              color: theme.color.foreground,
-            }}
-          >
-            {screen.field?.label || 'Entry'}
-          </Text>
-          {readOnly ? (
-            <View
-              style={{
-                paddingVertical: 2,
-                paddingHorizontal: 8,
-                borderRadius: 999,
-                backgroundColor: theme.color.bannerViewBg,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.fontSize.xs,
-                  color: theme.color.bannerViewFg,
-                  fontWeight: '600',
-                }}
-              >
-                View
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
+      <FormHeader
+        formName={headerTitle}
+        mode={readOnly ? 'readonly' : 'edit'}
+        leftAction={leftAction}
+        rightAction={rightAction}
+        showPrimaryActionsInViewMode={false}
+      />
       <KeyboardFormScrollView
         ref={editorScroll.scrollRef}
         onScroll={editorScroll.onScroll}
@@ -1863,25 +1804,97 @@ function RepeatableEditorScreen({
           controller,
           parentPath: contextPath,
           onFieldFocus: editorScroll.onFieldFocus,
+          registerFieldContainer,
+          registerFieldInput,
           theme,
+          activeDrilldownPath,
+          sectionMetadata: editorSectionMetadata,
+          onDrilldownNavigate: pushEditorDrilldownSection,
+          parentSectionPath: [],
         })}
-        {!readOnly && (
-          <View style={{ marginTop: 16 }}>
+      </KeyboardFormScrollView>
+      <RepeatableDiscardDialog
+        visible={discardDialogVisible}
+        onKeepEditing={() => setDiscardDialogVisible(false)}
+        onDiscard={() => {
+          setDiscardDialogVisible(false);
+          onBack();
+        }}
+      />
+    </View>
+  );
+}
+
+function RepeatableDiscardDialog({ visible, onKeepEditing, onDiscard }) {
+  const { theme } = useTheme();
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onKeepEditing}
+      statusBarTranslucent
+    >
+      <Pressable
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.35)',
+          justifyContent: 'center',
+          padding: 24,
+        }}
+        onPress={onKeepEditing}
+      >
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={{
+            backgroundColor: theme.color.background,
+            borderRadius: theme.borderRadius.lg ?? 12,
+            padding: 20,
+          }}
+        >
+          <View style={{ marginBottom: 16 }}>
+            <Text
+              style={{
+                color: theme.color.foreground,
+                fontWeight: theme.fontWeight.bold,
+                fontSize: theme.fontSize.lg,
+                marginBottom: 8,
+              }}
+            >
+              Discard changes?
+            </Text>
+            <Text style={{ color: theme.color.description }}>
+              You have unsaved changes in this entry that will be lost.
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
             <Pressable
-              onPress={handleSave}
+              onPress={onKeepEditing}
               style={({ pressed }) => ({
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                backgroundColor: pressed ? theme.color.buttonHoverBg : theme.color.buttonBg,
-                alignItems: 'center',
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                backgroundColor: pressed ? theme.color.cancelHoverBg : theme.color.cancelBg,
+                marginRight: 10,
               })}
             >
-              <Text style={{ color: theme.color.buttonFg, fontWeight: '600' }}>Save entry</Text>
+              <Text style={{ color: theme.color.cancelFg }}>Keep editing</Text>
+            </Pressable>
+            <Pressable
+              onPress={onDiscard}
+              style={({ pressed }) => ({
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                backgroundColor: pressed ? '#fce8e8' : '#fdecec',
+              })}
+            >
+              <Text style={{ color: theme.color.error, fontWeight: '600' }}>Discard</Text>
             </Pressable>
           </View>
-        )}
-      </KeyboardFormScrollView>
-    </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }

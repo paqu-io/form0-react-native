@@ -5,6 +5,15 @@ import {
   cloneDeep,
   createEmptyRepeatableInstance,
 } from './utils/repeatable-manager.js';
+import {
+  addRepeatableInstanceToState,
+  buildRepeatableParentValues,
+  getRepeatableInstance as getRepeatableInstanceFromState,
+  getRepeatableInstances as getRepeatableInstancesFromState,
+  removeRepeatableInstanceFromState,
+  setRepeatableInstancesInState,
+  updateRepeatableInstanceInState,
+} from './utils/repeatable-state.js';
 
 const createEmptyState = (repInfo) => {
   const values = {};
@@ -39,10 +48,6 @@ export function useRepeatableInstanceEngine({
     () => JSON.stringify(initialInstance?.values || {}),
     [initialInstance]
   );
-
-  useEffect(() => {
-    baseValuesRef.current = baseValues || {};
-  }, [baseValues]);
 
   useEffect(() => {
     valuesRef.current = initialInstance?.values || {};
@@ -127,6 +132,14 @@ export function useRepeatableInstanceEngine({
     rebuildEngine(valuesRef.current);
   }, [rebuildEngine]);
 
+  useEffect(() => {
+    baseValuesRef.current = baseValues || {};
+    if (!engineRef.current) {
+      return;
+    }
+    rebuildEngine(valuesRef.current);
+  }, [baseValues, rebuildEngine]);
+
   const filterUpdates = useCallback(
     (updates = {}) => {
       if (!updates || typeof updates !== 'object') return {};
@@ -182,63 +195,25 @@ export function useRepeatableInstanceEngine({
     return buildRepeatableInfo(repInfo.field.elements);
   }, [repInfo]);
 
-  const resolveRepeatableContainer = useCallback(
-    (state, path = [], { createIfMissing = false } = {}) => {
-      let container = state || {};
-      if (!Array.isArray(path) || path.length === 0) {
-        return container;
-      }
-      for (const segment of path) {
-        if (!segment || typeof segment.key !== 'string') {
-          return null;
-        }
-        const list = container?.[segment.key];
-        if (!Array.isArray(list)) {
-          return null;
-        }
-        const targetIndex = list.findIndex((instance) => instance.id === segment.id);
-        if (targetIndex === -1) {
-          return null;
-        }
-        const target = list[targetIndex];
-        if (!target.repeatable || typeof target.repeatable !== 'object') {
-          if (createIfMissing) {
-            target.repeatable = {};
-          } else {
-            return null;
-          }
-        }
-        container = target.repeatable;
-      }
-      return container;
-    },
-    []
-  );
-
   const setRepeatableSlice = useCallback((updater) => {
     setRepeatableState((prev) => {
       const base = prev && typeof prev === 'object' ? prev : {};
-      const draft = cloneDeep(base);
-      updater(draft);
-      return draft;
+      return updater(base);
     });
   }, []);
 
   const getRepeatableInstances = useCallback(
     (repeatableKey, parentPath = []) => {
-      const container = resolveRepeatableContainer(repeatableState, parentPath);
-      const list = container?.[repeatableKey];
-      return Array.isArray(list) ? list : [];
+      return getRepeatableInstancesFromState(repeatableState, repeatableKey, parentPath);
     },
-    [repeatableState, resolveRepeatableContainer]
+    [repeatableState]
   );
 
   const getRepeatableInstance = useCallback(
     (repeatableKey, instanceId, parentPath = []) => {
-      const list = getRepeatableInstances(repeatableKey, parentPath);
-      return list.find((instance) => instance.id === instanceId) || null;
+      return getRepeatableInstanceFromState(repeatableState, repeatableKey, instanceId, parentPath);
     },
-    [getRepeatableInstances]
+    [repeatableState]
   );
 
   const addRepeatableInstance = useCallback(
@@ -254,90 +229,52 @@ export function useRepeatableInstanceEngine({
       }
       newInstance.values = { ...newInstance.values, ...(seedValues || {}) };
       setRepeatableSlice((draft) => {
-        const container =
-          resolveRepeatableContainer(draft, parentPath, { createIfMissing: true }) || draft;
-        if (!Array.isArray(container[repeatableKey])) {
-          container[repeatableKey] = [];
-        }
-        container[repeatableKey].push(newInstance);
+        return addRepeatableInstanceToState(draft, repeatableKey, newInstance, parentPath);
       });
       return newInstance;
     },
-    [repeatableMetadata, resolveRepeatableContainer, setRepeatableSlice]
+    [repeatableMetadata, setRepeatableSlice]
   );
 
   const updateRepeatableInstance = useCallback(
     (repeatableKey, instanceId, updater, parentPath = []) => {
       setRepeatableSlice((draft) => {
-        const container = resolveRepeatableContainer(draft, parentPath);
-        if (!container) {
-          return;
-        }
-        const list = container[repeatableKey];
-        if (!Array.isArray(list)) {
-          return;
-        }
-        const index = list.findIndex((instance) => instance.id === instanceId);
-        if (index === -1) {
-          return;
-        }
-        const current = list[index];
-        const nextInstance =
-          typeof updater === 'function'
-            ? updater(cloneDeep(current))
-            : { ...current, ...updater };
-        list[index] = nextInstance;
+        return updateRepeatableInstanceInState(draft, repeatableKey, instanceId, updater, parentPath);
       });
     },
-    [resolveRepeatableContainer, setRepeatableSlice]
+    [setRepeatableSlice]
   );
 
   const removeRepeatableInstance = useCallback(
     (repeatableKey, instanceId, parentPath = []) => {
       setRepeatableSlice((draft) => {
-        const container = resolveRepeatableContainer(draft, parentPath);
-        if (!container) {
-          return;
-        }
-        const list = container[repeatableKey];
-        if (!Array.isArray(list)) {
-          return;
-        }
-        const index = list.findIndex((instance) => instance.id === instanceId);
-        if (index === -1) {
-          return;
-        }
-        list.splice(index, 1);
+        return removeRepeatableInstanceFromState(draft, repeatableKey, instanceId, parentPath);
       });
     },
-    [resolveRepeatableContainer, setRepeatableSlice]
+    [setRepeatableSlice]
   );
 
   const setRepeatableInstances = useCallback(
     (repeatableKey, instances = [], parentPath = []) => {
       setRepeatableSlice((draft) => {
-        const container =
-          resolveRepeatableContainer(draft, parentPath, { createIfMissing: true }) || draft;
-        container[repeatableKey] = Array.isArray(instances) ? cloneDeep(instances) : [];
+        return setRepeatableInstancesInState(draft, repeatableKey, instances, parentPath);
       });
     },
-    [resolveRepeatableContainer, setRepeatableSlice]
+    [setRepeatableSlice]
   );
 
   const buildParentValuesForPath = useCallback(
     (path = []) => {
-      let merged = { ...(baseValuesRef.current || {}) };
-      const traversePath = [];
-      path.forEach(({ key, id }) => {
-        const instance = getRepeatableInstance(key, id, traversePath);
-        if (instance?.values) {
-          merged = { ...merged, ...instance.values };
-        }
-        traversePath.push({ key, id });
+      return buildRepeatableParentValues({
+        seedValues: {
+          ...(baseValuesRef.current || {}),
+          ...(valuesRef.current || {}),
+        },
+        repeatableState,
+        path,
       });
-      return merged;
     },
-    [getRepeatableInstance]
+    [repeatableState]
   );
 
   return {
