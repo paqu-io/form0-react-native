@@ -14,6 +14,10 @@ const formRendererSource = readFileSync(
   new URL('../src/form-renderer.jsx', import.meta.url),
   'utf8',
 );
+const repeatableInstanceSource = readFileSync(
+  new URL('../src/use-repeatable-instance.js', import.meta.url),
+  'utf8',
+);
 
 test('field registry still merges renderer overrides', () => {
   assert.match(
@@ -88,8 +92,14 @@ test('repeatable list and editor use shared header-driven chrome', () => {
 
   assert.match(
     formRendererSource,
-    /const addLabel = getRepeatableAddLabel\(screen\.field\);/,
+    /const addLabel = `\+ \$\{getRepeatableAddLabel\(screen\.field\)\}`;/,
     'Repeatable list should derive the add action label from schema metadata',
+  );
+
+  assert.match(
+    formRendererSource,
+    /icon: null/,
+    'Repeatable add action should render as text-only so the label stays "+ Add"',
   );
 
   assert.match(
@@ -140,5 +150,23 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     formRendererSource,
     /navigateToValidationIssue\(getFirstValidationIssue\(validationSummary\)\);/,
     'Repeatable editor should navigate to the first invalid field on save failure',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const repeatableStateRef = useRef\(\{\}\);/,
+    'Root repeatable controller should read from a stable repeatable state ref',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const valuesRef = useRef\(values\);/,
+    'Root repeatable controller should read live values through a ref',
+  );
+
+  assert.match(
+    repeatableInstanceSource,
+    /const baseValuesSignature = useMemo\(\(\) => JSON\.stringify\(baseValues \|\| \{\}\), \[baseValues\]\);/,
+    'Repeatable instance engine should compare base values by content to avoid render loops',
   );
 });

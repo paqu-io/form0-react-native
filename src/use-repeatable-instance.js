@@ -44,15 +44,23 @@ export function useRepeatableInstanceEngine({
   const engineRef = useRef(null);
   const baseValuesRef = useRef(baseValues || {});
   const valuesRef = useRef(initialInstance?.values || {});
+  const repeatableStateRef = useRef(cloneDeep(initialInstance?.repeatable || {}));
   const initialSignature = useMemo(
     () => JSON.stringify(initialInstance?.values || {}),
     [initialInstance]
   );
+  const baseValuesSignature = useMemo(() => JSON.stringify(baseValues || {}), [baseValues]);
 
   useEffect(() => {
     valuesRef.current = initialInstance?.values || {};
-    setRepeatableState(cloneDeep(initialInstance?.repeatable || {}));
+    const nextRepeatableState = cloneDeep(initialInstance?.repeatable || {});
+    repeatableStateRef.current = nextRepeatableState;
+    setRepeatableState(nextRepeatableState);
   }, [initialSignature, initialInstance]);
+
+  useEffect(() => {
+    repeatableStateRef.current = repeatableState;
+  }, [repeatableState]);
 
   const fieldNames = useMemo(() => {
     if (!repInfo?.fields) return [];
@@ -138,7 +146,7 @@ export function useRepeatableInstanceEngine({
       return;
     }
     rebuildEngine(valuesRef.current);
-  }, [baseValues, rebuildEngine]);
+  }, [baseValuesSignature, rebuildEngine]);
 
   const filterUpdates = useCallback(
     (updates = {}) => {
@@ -204,16 +212,21 @@ export function useRepeatableInstanceEngine({
 
   const getRepeatableInstances = useCallback(
     (repeatableKey, parentPath = []) => {
-      return getRepeatableInstancesFromState(repeatableState, repeatableKey, parentPath);
+      return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
     },
-    [repeatableState]
+    []
   );
 
   const getRepeatableInstance = useCallback(
     (repeatableKey, instanceId, parentPath = []) => {
-      return getRepeatableInstanceFromState(repeatableState, repeatableKey, instanceId, parentPath);
+      return getRepeatableInstanceFromState(
+        repeatableStateRef.current,
+        repeatableKey,
+        instanceId,
+        parentPath
+      );
     },
-    [repeatableState]
+    []
   );
 
   const addRepeatableInstance = useCallback(
@@ -270,11 +283,11 @@ export function useRepeatableInstanceEngine({
           ...(baseValuesRef.current || {}),
           ...(valuesRef.current || {}),
         },
-        repeatableState,
+        repeatableState: repeatableStateRef.current,
         path,
       });
     },
-    [repeatableState]
+    []
   );
 
   return {

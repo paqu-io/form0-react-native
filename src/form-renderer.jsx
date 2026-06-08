@@ -360,6 +360,8 @@ export function FormRenderer({
   const [repeatableState, setRepeatableState] = useState({});
   const [repeatableStack, setRepeatableStack] = useState([]);
   const repeatableScreenIdRef = useRef(0);
+  const repeatableStateRef = useRef({});
+  const valuesRef = useRef(values);
 
   // Interaction mode state (allows switching between edit/readonly at runtime)
   const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
@@ -383,6 +385,14 @@ export function FormRenderer({
       !deepEqual(repeatableState, initialRepeatableStateRef.current);
     setHasChanges(changed);
   }, [repeatableState, values]);
+
+  useEffect(() => {
+    repeatableStateRef.current = repeatableState;
+  }, [repeatableState]);
+
+  useEffect(() => {
+    valuesRef.current = values;
+  }, [values]);
 
   const enterEditMode = useCallback(() => {
     setInteractionMode('edit');
@@ -456,16 +466,21 @@ export function FormRenderer({
 
   const getRepeatableInstances = useCallback(
     (repeatableKey, parentPath = []) => {
-      return getRepeatableInstancesFromState(repeatableState, repeatableKey, parentPath);
+      return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
     },
-    [repeatableState]
+    []
   );
 
   const getRepeatableInstance = useCallback(
     (repeatableKey, instanceId, parentPath = []) => {
-      return getRepeatableInstanceFromState(repeatableState, repeatableKey, instanceId, parentPath);
+      return getRepeatableInstanceFromState(
+        repeatableStateRef.current,
+        repeatableKey,
+        instanceId,
+        parentPath
+      );
     },
-    [repeatableState]
+    []
   );
 
   const setRepeatableInstances = useCallback(
@@ -478,12 +493,12 @@ export function FormRenderer({
   const buildParentValuesForPath = useCallback(
     (path = []) => {
       return buildRepeatableParentValues({
-        seedValues: values,
-        repeatableState,
+        seedValues: valuesRef.current,
+        repeatableState: repeatableStateRef.current,
         path,
       });
     },
-    [repeatableState, values]
+    []
   );
 
   const formRepeatableController = useMemo(
@@ -1409,7 +1424,7 @@ function RepeatableListScreen({
     screen.controller?.getInstances(screen.repeatableKey, screen.parentPath) || [];
   const label = screen.field?.label || 'Repeatable Section';
   const description = screen.field?.description || null;
-  const addLabel = getRepeatableAddLabel(screen.field);
+  const addLabel = `+ ${getRepeatableAddLabel(screen.field)}`;
   const leftAction = {
     id: 'back',
     label: 'Back',
@@ -1422,6 +1437,7 @@ function RepeatableListScreen({
         label: addLabel,
         variant: 'primary',
         onPress: onAdd,
+        icon: null,
       }
     : null;
 

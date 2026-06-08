@@ -84,9 +84,12 @@ function ActionButton({ action, theme, position }) {
   }
 
   const { id, label, variant = 'cancel', disabled = false, icon: CustomIcon } = action;
-  const Icon = CustomIcon || ACTION_ICONS[id] || null;
+  const Icon = Object.prototype.hasOwnProperty.call(action, 'icon')
+    ? CustomIcon
+    : (ACTION_ICONS[id] || null);
   const buttonStyle = getButtonStyle(variant, theme, disabled);
-  const iconPosition = position === 'left' ? 'left' : 'right';
+  const iconPosition =
+    position === 'right' && (id === 'add-repeatable' || id === 'add') ? 'left' : position === 'left' ? 'left' : 'right';
 
   return (
     <Pressable
