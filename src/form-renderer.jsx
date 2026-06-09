@@ -483,11 +483,22 @@ export function FormRenderer({
     []
   );
 
+  const updateRepeatableState = useCallback((updater) => {
+    setRepeatableState((prev) => {
+      const base = prev && typeof prev === 'object' ? prev : {};
+      const next = typeof updater === 'function' ? updater(base) : base;
+      repeatableStateRef.current = next;
+      return next;
+    });
+  }, []);
+
   const setRepeatableInstances = useCallback(
     (repeatableKey, instances = [], parentPath = []) => {
-      setRepeatableState((prev) => setRepeatableInstancesInState(prev, repeatableKey, instances, parentPath));
+      updateRepeatableState((prev) =>
+        setRepeatableInstancesInState(prev, repeatableKey, instances, parentPath)
+      );
     },
-    []
+    [updateRepeatableState]
   );
 
   const buildParentValuesForPath = useCallback(
@@ -1577,10 +1588,7 @@ function RepeatableEditorScreen({
   });
 
   const instanceId = initialInstance?.id || screen.instanceId;
-  const contextPath = useMemo(
-    () => [...(screen.parentPath || []), { key: screen.repeatableKey, id: instanceId }],
-    [instanceId, screen.parentPath, screen.repeatableKey]
-  );
+  const nestedRepeatableParentPath = useMemo(() => [], []);
   const controller = useMemo(
     () => ({
       repeatableMetadata,
@@ -1818,7 +1826,7 @@ function RepeatableEditorScreen({
           readOnly,
           submitCount,
           controller,
-          parentPath: contextPath,
+          parentPath: nestedRepeatableParentPath,
           onFieldFocus: editorScroll.onFieldFocus,
           registerFieldContainer,
           registerFieldInput,

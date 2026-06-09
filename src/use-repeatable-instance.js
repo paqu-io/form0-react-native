@@ -206,7 +206,9 @@ export function useRepeatableInstanceEngine({
   const setRepeatableSlice = useCallback((updater) => {
     setRepeatableState((prev) => {
       const base = prev && typeof prev === 'object' ? prev : {};
-      return updater(base);
+      const next = updater(base);
+      repeatableStateRef.current = next;
+      return next;
     });
   }, []);
 
