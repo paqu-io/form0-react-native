@@ -99,8 +99,5 @@ export function getRepeatableAddLabel(field) {
   if (typeof field?.add_label === 'string' && field.add_label.trim().length > 0) {
     return field.add_label.trim();
   }
-  if (typeof field?.label === 'string' && field.label.trim().length > 0) {
-    return `Add ${field.label.replace(/s\b/i, '').trim()}`;
-  }
   return 'Add';
 }

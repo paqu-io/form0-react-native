@@ -160,6 +160,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
+    /repeatableStateRef\.current = next;/,
+    'Root repeatable controller should update the repeatable ref synchronously when nested lists mutate',
+  );
+
+  assert.match(
+    formRendererSource,
     /const valuesRef = useRef\(values\);/,
     'Root repeatable controller should read live values through a ref',
   );
@@ -168,5 +174,17 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     repeatableInstanceSource,
     /const baseValuesSignature = useMemo\(\(\) => JSON\.stringify\(baseValues \|\| \{\}\), \[baseValues\]\);/,
     'Repeatable instance engine should compare base values by content to avoid render loops',
+  );
+
+  assert.match(
+    repeatableInstanceSource,
+    /repeatableStateRef\.current = next;/,
+    'Scoped repeatable controllers should update their ref synchronously so child lists reflect saved entries immediately',
+  );
+
+  assert.match(
+    formRendererSource,
+    /parentPath: nestedRepeatableParentPath,/,
+    'Nested repeatables inside a repeatable editor should use the local controller root instead of an absolute path',
   );
 });

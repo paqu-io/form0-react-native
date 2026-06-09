@@ -97,11 +97,11 @@ test('validation helpers block save on engine errors and prefer the displayed is
   );
 });
 
-test('repeatable add label respects schema overrides and falls back to a derived label', () => {
+test('repeatable add label respects schema overrides and otherwise stays generic', () => {
   assert.equal(
     getRepeatableAddLabel({ label: 'Photos', add_label: 'Add photo' }),
     'Add photo',
   );
-  assert.equal(getRepeatableAddLabel({ label: 'Rooms' }), 'Add Room');
+  assert.equal(getRepeatableAddLabel({ label: 'Rooms' }), 'Add');
   assert.equal(getRepeatableAddLabel({}), 'Add');
 });
