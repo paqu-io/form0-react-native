@@ -66,14 +66,14 @@ test('repeatable screens keep a mounted stack and save through the controller co
 
   assert.match(
     formRendererSource,
-    /screen\.controller\.setInstances\(repeatableKey, next, parentPath\);/,
-    'Editing an existing repeatable entry should replace it in place',
+    /screen\.controller\.updateInstance\(/,
+    'Editing an existing repeatable entry should use the controller update contract',
   );
 
   assert.match(
     formRendererSource,
-    /screen\.controller\.setInstances\(repeatableKey, \[\.\.\.existing, payload\], parentPath\);/,
-    'Creating a repeatable entry should append it to the current collection',
+    /screen\.controller\.addInstance\(repeatableKey, \{/,
+    'Creating a repeatable entry should use the controller add contract',
   );
 });
 
@@ -130,6 +130,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
+    /function RepeatableRemoveDialog\(/,
+    'Repeatable lists should own an internal remove confirmation dialog component',
+  );
+
+  assert.match(
+    formRendererSource,
     /<Modal\s+visible=\{visible\}/,
     'Discard confirmation should use a React Native Modal instead of Alert',
   );
@@ -166,6 +172,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
+    /pendingRepeatableRemoval\.controller\.removeInstance\(/,
+    'Repeatable list removal should route through the controller remove contract',
+  );
+
+  assert.match(
+    formRendererSource,
     /const valuesRef = useRef\(values\);/,
     'Root repeatable controller should read live values through a ref',
   );
@@ -186,5 +198,43 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     formRendererSource,
     /parentPath: nestedRepeatableParentPath,/,
     'Nested repeatables inside a repeatable editor should use the local controller root instead of an absolute path',
+  );
+});
+
+test('root submit is validation-gated and returns structured payload metadata', () => {
+  assert.match(
+    formRendererSource,
+    /const rootValidationSummary = useMemo\(/,
+    'FormRenderer should compute a root validation summary',
+  );
+
+  assert.match(
+    formRendererSource,
+    /if \(validationSummary\?\.hasErrors \|\| !onSubmit\) \{/,
+    'Root submit should stop when validation fails',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const submission = buildStructuredSubmission\(/,
+    'Root submit should build a structured submission payload',
+  );
+
+  assert.match(
+    formRendererSource,
+    /onSubmit\(submission\.structuredRecord, \{/,
+    'Root submit should pass the structured record as the first argument',
+  );
+
+  assert.match(
+    formRendererSource,
+    /rawValues: submission\.rawValues,/,
+    'Root submit metadata should include raw values',
+  );
+
+  assert.match(
+    formRendererSource,
+    /timestamps: submission\.timestamps,/,
+    'Root submit metadata should include timestamps',
   );
 });

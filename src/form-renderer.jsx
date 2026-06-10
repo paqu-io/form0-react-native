@@ -27,10 +27,13 @@ import { ThemeProvider, useTheme } from './theme-context.jsx';
 import { ImageResolverProvider } from './image-resolver-context.jsx';
 import { ChevronRight } from 'lucide-react-native';
 import {
+  addRepeatableInstanceToState,
   buildRepeatableParentValues,
   getRepeatableInstances as getRepeatableInstancesFromState,
   getRepeatableInstance as getRepeatableInstanceFromState,
+  removeRepeatableInstanceFromState,
   setRepeatableInstancesInState,
+  updateRepeatableInstanceInState,
 } from './utils/repeatable-state.js';
 import {
   buildValidationSummary,
@@ -39,6 +42,10 @@ import {
   getRepeatableAddLabel,
 } from './utils/repeatable-validation.js';
 import { isFieldValueEmpty } from './helpers/is-field-value-empty.js';
+import {
+  buildStructuredSubmission,
+  DEFAULT_FIELD_KEY_MODE,
+} from './utils/submission.js';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
 const SECTION_LIKE_TYPES = new Set(['Section', 'RepeatableSection', 'BuildingPlanSection']);
@@ -328,6 +335,7 @@ export function FormRenderer({
   initialValues = {},
   overrideValues,
   onSubmit,
+  fieldKeyMode = DEFAULT_FIELD_KEY_MODE,
   mode: modeProp = 'edit',
   keyboardScrollOffset = DEFAULT_SCROLL_OFFSET,
   debug = false,
@@ -359,6 +367,7 @@ export function FormRenderer({
   const [submitCount, setSubmitCount] = useState(0);
   const [repeatableState, setRepeatableState] = useState({});
   const [repeatableStack, setRepeatableStack] = useState([]);
+  const [pendingRepeatableRemoval, setPendingRepeatableRemoval] = useState(null);
   const repeatableScreenIdRef = useRef(0);
   const repeatableStateRef = useRef({});
   const valuesRef = useRef(values);
@@ -407,6 +416,18 @@ export function FormRenderer({
   const elements = finalSchema?.form?.elements || [];
   const repeatableMetadata = useMemo(
     () => buildRepeatableInfo(elements),
+    [elements]
+  );
+  const statusField = finalSchema?.form?.status_field || null;
+  const statusFieldName = statusField?.data_name || null;
+  const statusValue = statusFieldName
+    ? values?.[statusFieldName] ?? statusField?.default_value ?? null
+    : null;
+  const validatableRootFields = useMemo(
+    () =>
+      collectValidatableFields(elements, {
+        includeRepeatableChildren: false,
+      }),
     [elements]
   );
 
@@ -464,6 +485,30 @@ export function FormRenderer({
     setActiveDrilldownPath(nextDrilldownPath);
   }, [activeDrilldownSectionId, sectionMetadata]);
 
+  const buildRootValidationSummary = useCallback(
+    () =>
+      buildValidationSummary(validatableRootFields, {
+        getValue: (field) => {
+          if (!field?.data_name) {
+            return null;
+          }
+          if (field.data_name === statusFieldName) {
+            return statusValue ?? null;
+          }
+          return values[field.data_name];
+        },
+        isVisible: (field) => !field?.data_name || visible?.[field.data_name] !== false,
+        isRequired: (field) => Boolean(field?.data_name && required?.[field.data_name]),
+        getError: (field) => (field?.data_name ? errors?.[field.data_name] : null),
+      }),
+    [errors, required, statusFieldName, statusValue, validatableRootFields, values, visible]
+  );
+
+  const rootValidationSummary = useMemo(
+    () => buildRootValidationSummary(),
+    [buildRootValidationSummary]
+  );
+
   const getRepeatableInstances = useCallback(
     (repeatableKey, parentPath = []) => {
       return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
@@ -501,6 +546,47 @@ export function FormRenderer({
     [updateRepeatableState]
   );
 
+  const addRepeatableInstance = useCallback(
+    (repeatableKey, { parentPath = [], seedValues = {}, instanceId } = {}) => {
+      const repInfo = repeatableMetadata.byPreferredKey.get(repeatableKey);
+      if (!repInfo) {
+        console.warn(`form0-react-native: unknown RepeatableSection "${repeatableKey}"`);
+        return null;
+      }
+
+      const newInstance = createEmptyRepeatableInstance(repInfo);
+      if (instanceId) {
+        newInstance.id = instanceId;
+      }
+      newInstance.values = { ...newInstance.values, ...(seedValues || {}) };
+
+      updateRepeatableState((prev) =>
+        addRepeatableInstanceToState(prev, repeatableKey, newInstance, parentPath)
+      );
+
+      return newInstance;
+    },
+    [repeatableMetadata, updateRepeatableState]
+  );
+
+  const updateRepeatableInstance = useCallback(
+    (repeatableKey, instanceId, updater, parentPath = []) => {
+      updateRepeatableState((prev) =>
+        updateRepeatableInstanceInState(prev, repeatableKey, instanceId, updater, parentPath)
+      );
+    },
+    [updateRepeatableState]
+  );
+
+  const removeRepeatableInstance = useCallback(
+    (repeatableKey, instanceId, parentPath = []) => {
+      updateRepeatableState((prev) =>
+        removeRepeatableInstanceFromState(prev, repeatableKey, instanceId, parentPath)
+      );
+    },
+    [updateRepeatableState]
+  );
+
   const buildParentValuesForPath = useCallback(
     (path = []) => {
       return buildRepeatableParentValues({
@@ -515,17 +601,23 @@ export function FormRenderer({
   const formRepeatableController = useMemo(
     () => ({
       repeatableMetadata,
+      addInstance: addRepeatableInstance,
+      updateInstance: updateRepeatableInstance,
+      removeInstance: removeRepeatableInstance,
       getInstances: getRepeatableInstances,
       setInstances: setRepeatableInstances,
       getInstance: getRepeatableInstance,
       buildParentValues: buildParentValuesForPath,
     }),
     [
+      addRepeatableInstance,
       buildParentValuesForPath,
       getRepeatableInstance,
       getRepeatableInstances,
+      removeRepeatableInstance,
       repeatableMetadata,
       setRepeatableInstances,
+      updateRepeatableInstance,
     ]
   );
 
@@ -1079,7 +1171,6 @@ export function FormRenderer({
   const canSubmit = !isReadOnly && typeof onSubmit === 'function';
   const hasSubmitHandler = typeof onSubmit === 'function';
   const activeRepeatableScreen = repeatableStack[repeatableStack.length - 1] || null;
-  const shouldValidatePrimaryAction = primaryActionMode !== 'save';
   const resolvedPrimaryActionLabel =
     typeof primaryActionLabel === 'string' && primaryActionLabel.trim().length > 0
       ? primaryActionLabel.trim()
@@ -1113,13 +1204,28 @@ export function FormRenderer({
 
   // Handle form submission
   const handleFormSubmit = useCallback(() => {
-    if (shouldValidatePrimaryAction) {
-      setSubmitCount((count) => count + 1);
+    setSubmitCount((count) => count + 1);
+
+    const validationSummary = rootValidationSummary;
+    if (validationSummary?.hasErrors || !onSubmit) {
+      return;
     }
-    if (onSubmit) {
-      onSubmit(submit(), { repeatable: cloneDeep(repeatableState) });
-    }
-  }, [onSubmit, repeatableState, shouldValidatePrimaryAction, submit]);
+
+    const submissionValues = submit();
+    const submission = buildStructuredSubmission({
+      schema: finalSchema,
+      values: submissionValues,
+      repeatable: repeatableStateRef.current,
+      fieldKeyMode,
+    });
+
+    onSubmit(submission.structuredRecord, {
+      repeatable: submission.repeatable,
+      rawValues: submission.rawValues,
+      validationSummary,
+      timestamps: submission.timestamps,
+    });
+  }, [fieldKeyMode, finalSchema, onSubmit, rootValidationSummary, submit]);
 
   const getRepeatableEntryTitle = (field, instance, index) => {
     const titleFieldDataName = field?.title_field?.data_name;
@@ -1141,19 +1247,101 @@ export function FormRenderer({
         return;
       }
       const { repeatableKey, parentPath, mode: saveMode, instanceId } = screen;
-      const existing = screen.controller.getInstances(repeatableKey, parentPath);
-      if (saveMode === 'edit') {
-        const next = existing.map((instance) =>
-          instance.id === instanceId ? payload : instance
+      if (saveMode === 'edit' && typeof screen.controller.updateInstance === 'function') {
+        screen.controller.updateInstance(
+          repeatableKey,
+          instanceId,
+          () => payload,
+          parentPath
         );
-        screen.controller.setInstances(repeatableKey, next, parentPath);
+      } else if (saveMode !== 'edit' && typeof screen.controller.addInstance === 'function') {
+        screen.controller.addInstance(repeatableKey, {
+          parentPath,
+          instanceId: payload.id,
+          seedValues: payload.values,
+        });
+        if (payload.repeatable && typeof screen.controller.updateInstance === 'function') {
+          screen.controller.updateInstance(
+            repeatableKey,
+            payload.id,
+            (current) => ({
+              ...current,
+              ...payload,
+            }),
+            parentPath
+          );
+        }
       } else {
-        screen.controller.setInstances(repeatableKey, [...existing, payload], parentPath);
+        const existing = screen.controller.getInstances(repeatableKey, parentPath);
+        if (saveMode === 'edit') {
+          const next = existing.map((instance) =>
+            instance.id === instanceId ? payload : instance
+          );
+          screen.controller.setInstances(repeatableKey, next, parentPath);
+        } else {
+          screen.controller.setInstances(repeatableKey, [...existing, payload], parentPath);
+        }
       }
       popRepeatableScreen();
     },
     [popRepeatableScreen]
   );
+
+  const requestRepeatableRemoval = useCallback(
+    (screen, instanceId) => {
+      if (!screen?.controller || !instanceId) {
+        return;
+      }
+      const instance = screen.controller.getInstance?.(
+        screen.repeatableKey,
+        instanceId,
+        screen.parentPath
+      );
+      const instances = screen.controller.getInstances?.(screen.repeatableKey, screen.parentPath) || [];
+      const index = instances.findIndex((entry) => entry.id === instanceId);
+
+      setPendingRepeatableRemoval({
+        controller: screen.controller,
+        repeatableKey: screen.repeatableKey,
+        parentPath: screen.parentPath,
+        instanceId,
+        entryTitle: getRepeatableEntryTitle(screen.field, instance, Math.max(index, 0)),
+      });
+    },
+    [getRepeatableEntryTitle]
+  );
+
+  const dismissRepeatableRemoval = useCallback(() => {
+    setPendingRepeatableRemoval(null);
+  }, []);
+
+  const confirmRepeatableRemoval = useCallback(() => {
+    if (!pendingRepeatableRemoval?.controller) {
+      setPendingRepeatableRemoval(null);
+      return;
+    }
+
+    if (typeof pendingRepeatableRemoval.controller.removeInstance === 'function') {
+      pendingRepeatableRemoval.controller.removeInstance(
+        pendingRepeatableRemoval.repeatableKey,
+        pendingRepeatableRemoval.instanceId,
+        pendingRepeatableRemoval.parentPath
+      );
+    } else {
+      const currentInstances =
+        pendingRepeatableRemoval.controller.getInstances?.(
+          pendingRepeatableRemoval.repeatableKey,
+          pendingRepeatableRemoval.parentPath
+        ) || [];
+      pendingRepeatableRemoval.controller.setInstances?.(
+        pendingRepeatableRemoval.repeatableKey,
+        currentInstances.filter((instance) => instance.id !== pendingRepeatableRemoval.instanceId),
+        pendingRepeatableRemoval.parentPath
+      );
+    }
+
+    setPendingRepeatableRemoval(null);
+  }, [pendingRepeatableRemoval]);
 
   const formName = finalSchema?.form?.name || null;
 
@@ -1209,15 +1397,7 @@ export function FormRenderer({
                   draft,
                 });
               }}
-              onRemove={(instanceId) =>
-                screen.controller?.setInstances(
-                  screen.repeatableKey,
-                  screen.controller
-                    ?.getInstances(screen.repeatableKey, screen.parentPath)
-                    .filter((instance) => instance.id !== instanceId),
-                  screen.parentPath
-                )
-              }
+              onRemove={(instanceId) => requestRepeatableRemoval(screen, instanceId)}
               getEntryTitle={getRepeatableEntryTitle}
               readOnly={isReadOnly}
               theme={theme}
@@ -1232,7 +1412,7 @@ export function FormRenderer({
               labelPosition={labelPosition}
               labelWidthPercent={labelWidthPercent}
               readOnly={isReadOnly}
-              validateBeforeSave={shouldValidatePrimaryAction}
+              validateBeforeSave
               keyboardScrollOffset={keyboardScrollOffset}
               theme={theme}
             />
@@ -1250,6 +1430,12 @@ export function FormRenderer({
           </View>
         );
       })}
+      <RepeatableRemoveDialog
+        visible={Boolean(pendingRepeatableRemoval)}
+        entryTitle={pendingRepeatableRemoval?.entryTitle || null}
+        onCancel={dismissRepeatableRemoval}
+        onConfirm={confirmRepeatableRemoval}
+      />
     </View>
   );
 
@@ -1559,6 +1745,9 @@ function RepeatableEditorScreen({
           screen.parentPath
         )
       : screen.draft;
+  // Follow-up parity work with form0-react should freeze initialInstance and parentValues
+  // into the screen object when the editor opens, instead of re-deriving them from the
+  // controller while hidden stack screens stay mounted.
   const baseValues = screen.controller?.buildParentValues?.(screen.parentPath) || {};
   const {
     values,
@@ -1570,6 +1759,9 @@ function RepeatableEditorScreen({
     submit,
     repeatable,
     repeatableMetadata,
+    addRepeatableInstance,
+    updateRepeatableInstance,
+    removeRepeatableInstance,
     getRepeatableInstances,
     setRepeatableInstances,
     getRepeatableInstance,
@@ -1592,17 +1784,23 @@ function RepeatableEditorScreen({
   const controller = useMemo(
     () => ({
       repeatableMetadata,
+      addInstance: addRepeatableInstance,
+      updateInstance: updateRepeatableInstance,
+      removeInstance: removeRepeatableInstance,
       getInstances: getRepeatableInstances,
       setInstances: setRepeatableInstances,
       getInstance: getRepeatableInstance,
       buildParentValues,
     }),
     [
+      addRepeatableInstance,
       buildParentValues,
       getRepeatableInstance,
       getRepeatableInstances,
+      removeRepeatableInstance,
       repeatableMetadata,
       setRepeatableInstances,
+      updateRepeatableInstance,
     ]
   );
   const resolveNestedRepeatableKey = useCallback((field) => {
@@ -1915,6 +2113,81 @@ function RepeatableDiscardDialog({ visible, onKeepEditing, onDiscard }) {
               })}
             >
               <Text style={{ color: theme.color.error, fontWeight: '600' }}>Discard</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RepeatableRemoveDialog({ visible, entryTitle, onCancel, onConfirm }) {
+  const { theme } = useTheme();
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+      statusBarTranslucent
+    >
+      <Pressable
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.35)',
+          justifyContent: 'center',
+          padding: 24,
+        }}
+        onPress={onCancel}
+      >
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={{
+            backgroundColor: theme.color.background,
+            borderRadius: theme.borderRadius.lg ?? 12,
+            padding: 20,
+          }}
+        >
+          <View style={{ marginBottom: 16 }}>
+            <Text
+              style={{
+                color: theme.color.foreground,
+                fontWeight: theme.fontWeight.bold,
+                fontSize: theme.fontSize.lg,
+                marginBottom: 8,
+              }}
+            >
+              Remove this entry?
+            </Text>
+            <Text style={{ color: theme.color.description }}>
+              {entryTitle ? `${entryTitle}\n\n` : ''}
+              This cannot be undone.
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => ({
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                backgroundColor: pressed ? theme.color.cancelHoverBg : theme.color.cancelBg,
+                marginRight: 10,
+              })}
+            >
+              <Text style={{ color: theme.color.cancelFg }}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={onConfirm}
+              style={({ pressed }) => ({
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                backgroundColor: pressed ? '#fce8e8' : '#fdecec',
+              })}
+            >
+              <Text style={{ color: theme.color.error, fontWeight: '600' }}>Remove</Text>
             </Pressable>
           </View>
         </Pressable>
