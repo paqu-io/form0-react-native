@@ -159,6 +159,8 @@ export function FormHeader({
   leftAction,
   rightAction,
   secondaryRightAction,
+  onTitlePress,
+  titleAccessibilityHint = 'Open form navigation',
   style,
   includeSafeArea = true,
 }) {
@@ -209,6 +211,16 @@ export function FormHeader({
 
   // Handle secondary right action (e.g., Edit button when there's also a primary action)
   const resolvedSecondaryRightAction = secondaryRightAction;
+  const canPressTitle = typeof onTitlePress === 'function' && Boolean(formName);
+  const titleNode = formName ? (
+    <Text
+      style={[styles.title, { color: titleColor, fontSize: theme.fontSize.lg }]}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {formName}
+    </Text>
+  ) : null;
 
   return (
     <View
@@ -226,15 +238,20 @@ export function FormHeader({
         <ActionButton action={resolvedLeftAction} theme={theme} position="left" />
 
         <View style={styles.titleContainer}>
-          {formName ? (
-            <Text
-              style={[styles.title, { color: titleColor, fontSize: theme.fontSize.lg }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
+          {canPressTitle ? (
+            <Pressable
+              onPress={onTitlePress}
+              hitSlop={HIT_SLOP}
+              style={styles.titlePressable}
+              accessibilityRole="button"
+              accessibilityLabel={formName}
+              accessibilityHint={titleAccessibilityHint}
             >
-              {formName}
-            </Text>
-          ) : null}
+              {titleNode}
+            </Pressable>
+          ) : (
+            titleNode
+          )}
         </View>
 
         <View style={styles.rightActions}>
@@ -276,6 +293,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
+  },
+  titlePressable: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   title: {
     fontWeight: '600',

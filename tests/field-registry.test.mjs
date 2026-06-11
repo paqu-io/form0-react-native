@@ -10,12 +10,24 @@ const fieldRegistryContextSource = readFileSync(
   new URL('../src/field-registry-context.jsx', import.meta.url),
   'utf8',
 );
+const fieldComponentsSource = readFileSync(
+  new URL('../src/field-components/index.js', import.meta.url),
+  'utf8',
+);
 const formRendererSource = readFileSync(
   new URL('../src/form-renderer.jsx', import.meta.url),
   'utf8',
 );
+const formHeaderSource = readFileSync(
+  new URL('../src/form-header.jsx', import.meta.url),
+  'utf8',
+);
 const repeatableInstanceSource = readFileSync(
   new URL('../src/use-repeatable-instance.js', import.meta.url),
+  'utf8',
+);
+const packageTypesSource = readFileSync(
+  new URL('../src/index.d.ts', import.meta.url),
   'utf8',
 );
 
@@ -36,6 +48,80 @@ test('field registry still merges renderer overrides', () => {
     formRendererSource,
     /renderers,/,
     'FormRenderer should plumb renderers through to the registry provider',
+  );
+
+  assert.match(
+    fieldRegistrySource,
+    /warnAboutPlaceholderBackedFieldTypes/,
+    'Field registry should warn when placeholder-backed defaults are still active',
+  );
+
+  assert.match(
+    fieldComponentsSource,
+    /SignatureField:\s*SignatureFieldComponent/,
+    'SignatureField should ship with a built-in native renderer',
+  );
+});
+
+test('form renderer exposes parity-facing snapshot and engine APIs', () => {
+  assert.match(
+    formRendererSource,
+    /initialSnapshot,/,
+    'FormRenderer should accept initialSnapshot',
+  );
+
+  assert.match(
+    formRendererSource,
+    /onSnapshotChange,/,
+    'FormRenderer should accept onSnapshotChange',
+  );
+
+  assert.match(
+    formRendererSource,
+    /engineOptions,/,
+    'FormRenderer should accept engineOptions',
+  );
+
+  assert.match(
+    formRendererSource,
+    /forceShowNavigationPanel = false/,
+    'FormRenderer should accept the web-aligned forceShowNavigationPanel prop',
+  );
+
+  assert.match(
+    formRendererSource,
+    /useFormEngine\(schema, rendererInitialValues, overrideValues, effectiveEngineOptions\)/,
+    'Root engine should receive renderer-owned initial values and engine options',
+  );
+
+  assert.match(
+    formRendererSource,
+    /triggerEvent\('load-record'\);/,
+    'Root form should trigger load-record when the engine becomes ready',
+  );
+
+  assert.match(
+    formRendererSource,
+    /triggerEvent\('edit-record'\);/,
+    'Root form should trigger edit-record when entering edit mode',
+  );
+
+  assert.match(
+    formRendererSource,
+    /kind: 'seed'/,
+    'Snapshot callbacks should emit a seed phase',
+  );
+
+  assert.match(
+    formRendererSource,
+    /kind: 'change'/,
+    'Snapshot callbacks should emit a change phase after user edits',
+  );
+
+  assert.match(
+    formRendererSource,
+    /function FormNavigationSheet\(/,
+    'FormRenderer should own a native navigation and validation sheet',
   );
 });
 
@@ -66,14 +152,26 @@ test('repeatable screens keep a mounted stack and save through the controller co
 
   assert.match(
     formRendererSource,
-    /screen\.controller\.setInstances\(repeatableKey, next, parentPath\);/,
-    'Editing an existing repeatable entry should replace it in place',
+    /screen\.controller\.updateInstance\(/,
+    'Editing an existing repeatable entry should use the controller update contract',
   );
 
   assert.match(
     formRendererSource,
-    /screen\.controller\.setInstances\(repeatableKey, \[\.\.\.existing, payload\], parentPath\);/,
-    'Creating a repeatable entry should append it to the current collection',
+    /screen\.controller\.addInstance\(repeatableKey, \{/,
+    'Creating a repeatable entry should use the controller add contract',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const initialInstance =\s*cloneDeep\(screen\.initialInstance/,
+    'Repeatable editors should consume a frozen initial instance from the screen config',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const baseValues = cloneDeep\(screen\.parentValues \|\| \{\}\);/,
+    'Repeatable editors should consume frozen parent values from the screen config',
   );
 });
 
@@ -88,6 +186,18 @@ test('repeatable list and editor use shared header-driven chrome', () => {
     formRendererSource,
     /<FormHeader\s+formName=\{headerTitle\}/,
     'Repeatable editor should use FormHeader',
+  );
+
+  assert.match(
+    formHeaderSource,
+    /onTitlePress/,
+    'FormHeader should accept an optional title press handler',
+  );
+
+  assert.match(
+    formHeaderSource,
+    /titleAccessibilityHint = 'Open form navigation'/,
+    'FormHeader should expose an accessibility hint for title-triggered navigation',
   );
 
   assert.match(
@@ -130,6 +240,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
+    /function RepeatableRemoveDialog\(/,
+    'Repeatable lists should own an internal remove confirmation dialog component',
+  );
+
+  assert.match(
+    formRendererSource,
     /<Modal\s+visible=\{visible\}/,
     'Discard confirmation should use a React Native Modal instead of Alert',
   );
@@ -154,7 +270,13 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
-    /const repeatableStateRef = useRef\(\{\}\);/,
+    /navigateToRootValidationIssue\(getFirstValidationIssue\(validationSummary\)\);/,
+    'Root form should navigate to the first invalid field on submit failure',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const repeatableStateRef = useRef\(initialRepeatableSeed\);/,
     'Root repeatable controller should read from a stable repeatable state ref',
   );
 
@@ -162,6 +284,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     formRendererSource,
     /repeatableStateRef\.current = next;/,
     'Root repeatable controller should update the repeatable ref synchronously when nested lists mutate',
+  );
+
+  assert.match(
+    formRendererSource,
+    /pendingRepeatableRemoval\.controller\.removeInstance\(/,
+    'Repeatable list removal should route through the controller remove contract',
   );
 
   assert.match(
@@ -186,5 +314,75 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     formRendererSource,
     /parentPath: nestedRepeatableParentPath,/,
     'Nested repeatables inside a repeatable editor should use the local controller root instead of an absolute path',
+  );
+
+  assert.match(
+    formRendererSource,
+    /screen\.engineOptions\?\.onOperations/,
+    'Repeatable editors should reuse engineOptions while wrapping alert operations locally',
+  );
+});
+
+test('root submit is validation-gated and returns structured payload metadata', () => {
+  assert.match(
+    formRendererSource,
+    /const rootValidationSummary = useMemo\(/,
+    'FormRenderer should compute a root validation summary',
+  );
+
+  assert.match(
+    formRendererSource,
+    /if \(validationSummary\?\.hasErrors \|\| !onSubmit\) \{/,
+    'Root submit should stop when validation fails',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const submission = buildStructuredSubmission\(/,
+    'Root submit should build a structured submission payload',
+  );
+
+  assert.match(
+    formRendererSource,
+    /onSubmit\(submission\.structuredRecord, \{/,
+    'Root submit should pass the structured record as the first argument',
+  );
+
+  assert.match(
+    formRendererSource,
+    /rawValues: submission\.rawValues,/,
+    'Root submit metadata should include raw values',
+  );
+
+  assert.match(
+    formRendererSource,
+    /timestamps: submission\.timestamps,/,
+    'Root submit metadata should include timestamps',
+  );
+});
+
+test('package types document snapshot and engine option contracts', () => {
+  assert.match(
+    packageTypesSource,
+    /export type FormRendererSnapshot = \{/,
+    'Package types should export the FormRendererSnapshot contract',
+  );
+
+  assert.match(
+    packageTypesSource,
+    /export type FormRendererEngineOptions = \{/,
+    'Package types should export the engine options contract',
+  );
+
+  assert.match(
+    packageTypesSource,
+    /initialSnapshot\?: FormRendererSnapshot;/,
+    'FormRenderer props should expose initialSnapshot in the package types',
+  );
+
+  assert.match(
+    packageTypesSource,
+    /forceShowNavigationPanel\?: boolean;/,
+    'FormRenderer props should expose forceShowNavigationPanel in the package types',
   );
 });

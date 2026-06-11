@@ -1,5 +1,5 @@
 import { FIELD_SPECS } from 'form0-core';
-import { defaultFieldComponents } from './field-components/index.js';
+import { defaultFieldComponents, placeholderBackedFieldTypes } from './field-components/index.js';
 
 const NON_RENDERED_TYPES = new Set(['Section', 'RepeatableSection', 'BuildingPlanSection']);
 const ENGINE_FIELD_TYPES = Object.keys(FIELD_SPECS);
@@ -41,6 +41,7 @@ function createInternalRegistryState({
     warnedFieldTypes: new Set(),
     missingDefaultFieldTypes: new Set(),
     lastMissingWarningKey: null,
+    lastPlaceholderWarningKey: null,
   };
 
   if (includeDefaults) {
@@ -81,6 +82,7 @@ function resetFieldComponentsInState(state) {
     registerDefaultFieldComponentsInState(state);
   }
   recomputeMissingFieldTypes(state);
+  warnAboutPlaceholderBackedFieldTypes(state);
 }
 
 function listRegisteredFieldTypesFromState(state) {
@@ -145,6 +147,37 @@ function warnAboutMissingDefaultFieldTypes(state) {
   );
 }
 
+function warnAboutPlaceholderBackedFieldTypes(state) {
+  if (!IS_DEV || !state.includeDefaults) {
+    state.lastPlaceholderWarningKey = null;
+    return;
+  }
+
+  const placeholderTypes = placeholderBackedFieldTypes.filter(
+    (type) => state.registry.get(type) === defaultFieldComponents[type]
+  );
+  if (placeholderTypes.length === 0) {
+    state.lastPlaceholderWarningKey = null;
+    return;
+  }
+
+  const warningKey = placeholderTypes.join(',');
+  if (warningKey === state.lastPlaceholderWarningKey) {
+    return;
+  }
+
+  state.lastPlaceholderWarningKey = warningKey;
+  console.warn(
+    [
+      'form0-react-native:',
+      'the default renderer for field type(s)',
+      placeholderTypes.join(', '),
+      'is still a placeholder.',
+      'Provide custom renderers for production use until first-class native components ship.',
+    ].join(' ')
+  );
+}
+
 function createRegistryAPI(state) {
   return {
     registerFieldComponent(type, component) {
@@ -187,6 +220,8 @@ export function createFieldRegistry(options = {}) {
       registerFieldComponentInState(state, type, component);
     });
   }
+
+  warnAboutPlaceholderBackedFieldTypes(state);
 
   return createRegistryAPI(state);
 }

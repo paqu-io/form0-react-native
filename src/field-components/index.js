@@ -9,6 +9,7 @@ import { TimeFieldComponent } from './time-field.js';
 import { LabelFieldComponent } from './label-field.js';
 import { TitleFieldComponent } from './title-field.js';
 import { StatusFieldComponent } from './status-field.js';
+import { SignatureFieldComponent } from './signature-field.js';
 import { PlaceholderFieldComponent } from './placeholder-field.js';
 
 export {
@@ -23,6 +24,7 @@ export {
   LabelFieldComponent,
   TitleFieldComponent,
   StatusFieldComponent,
+  SignatureFieldComponent,
   PlaceholderFieldComponent,
 };
 
@@ -40,6 +42,8 @@ export const defaultFieldComponents = {
   StatusField: StatusFieldComponent,
   PhotoField: PlaceholderFieldComponent,
   VideoField: PlaceholderFieldComponent,
-  SignatureField: PlaceholderFieldComponent,
+  SignatureField: SignatureFieldComponent,
   FormLinkField: PlaceholderFieldComponent,
 };
+
+export const placeholderBackedFieldTypes = ['PhotoField', 'VideoField', 'FormLinkField'];
