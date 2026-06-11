@@ -14,6 +14,10 @@ const fieldComponentsSource = readFileSync(
   new URL('../src/field-components/index.js', import.meta.url),
   'utf8',
 );
+const signatureFieldSource = readFileSync(
+  new URL('../src/field-components/signature-field.js', import.meta.url),
+  'utf8',
+);
 const formRendererSource = readFileSync(
   new URL('../src/form-renderer.jsx', import.meta.url),
   'utf8',
@@ -61,6 +65,18 @@ test('field registry still merges renderer overrides', () => {
     /SignatureField:\s*SignatureFieldComponent/,
     'SignatureField should ship with a built-in native renderer',
   );
+
+  assert.match(
+    signatureFieldSource,
+    /toDataURL\(/,
+    'Native SignatureField should export the captured signature through react-native-svg',
+  );
+
+  assert.match(
+    signatureFieldSource,
+    /mime_type:\s*'image\/png'/,
+    'Native SignatureField should persist signatures as PNG for parity with web',
+  );
 });
 
 test('form renderer exposes parity-facing snapshot and engine APIs', () => {
@@ -90,8 +106,14 @@ test('form renderer exposes parity-facing snapshot and engine APIs', () => {
 
   assert.match(
     formRendererSource,
-    /useFormEngine\(schema, rendererInitialValues, overrideValues, effectiveEngineOptions\)/,
-    'Root engine should receive renderer-owned initial values and engine options',
+    /useFormEngine\(schema, appliedRendererInitialValues, overrideValues, effectiveEngineOptions\)/,
+    'Root engine should receive the applied seed values and engine options',
+  );
+
+  assert.match(
+    formRendererSource,
+    /snapshotSeedMatchesLiveState/,
+    'FormRenderer should ignore echoed snapshot seeds that match the live state',
   );
 
   assert.match(
@@ -276,7 +298,7 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
-    /const repeatableStateRef = useRef\(initialRepeatableSeed\);/,
+    /const repeatableStateRef = useRef\(appliedRepeatableSeed\);/,
     'Root repeatable controller should read from a stable repeatable state ref',
   );
 

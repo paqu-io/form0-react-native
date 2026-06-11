@@ -369,6 +369,24 @@ function buildNavigationIssues(summary, sectionMetadata = {}, fieldToSectionPath
   });
 }
 
+function buildSnapshotSeedSignature(rawValues = {}, repeatable = {}) {
+  return JSON.stringify({
+    raw_values: rawValues || {},
+    repeatable: repeatable || {},
+  });
+}
+
+function snapshotSeedMatchesLiveState(rawValues = {}, repeatable = {}, snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return false;
+  }
+
+  return (
+    deepEqual(snapshot.raw_values || {}, rawValues || {}) &&
+    deepEqual(snapshot.repeatable || {}, repeatable || {})
+  );
+}
+
 function isObjectLike(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -651,6 +669,15 @@ export function FormRenderer({
     () => cloneDeep(initialSnapshotRepeatable || {}),
     [initialSnapshotRepeatable]
   );
+  const [appliedRendererInitialValues, setAppliedRendererInitialValues] = useState(() =>
+    cloneDeep(rendererInitialValues || {})
+  );
+  const [appliedInitialTimestampSeedValues, setAppliedInitialTimestampSeedValues] = useState(() =>
+    cloneDeep(initialTimestampSeedValues || {})
+  );
+  const [appliedRepeatableSeed, setAppliedRepeatableSeed] = useState(() =>
+    cloneDeep(initialRepeatableSeed || {})
+  );
   const { activeAlert, closeAlert, handleOperations } = useOperationAlertBridge(
     engineOptions?.onOperations
   );
@@ -672,13 +699,13 @@ export function FormRenderer({
     schema: finalSchema,
     triggerEvent,
     engineReadyVersion,
-  } = useFormEngine(schema, rendererInitialValues, overrideValues, effectiveEngineOptions);
+  } = useFormEngine(schema, appliedRendererInitialValues, overrideValues, effectiveEngineOptions);
   const [submitCount, setSubmitCount] = useState(0);
-  const [repeatableState, setRepeatableState] = useState(initialRepeatableSeed);
+  const [repeatableState, setRepeatableState] = useState(appliedRepeatableSeed);
   const [repeatableStack, setRepeatableStack] = useState([]);
   const [pendingRepeatableRemoval, setPendingRepeatableRemoval] = useState(null);
   const repeatableScreenIdRef = useRef(0);
-  const repeatableStateRef = useRef(initialRepeatableSeed);
+  const repeatableStateRef = useRef(appliedRepeatableSeed);
   const valuesRef = useRef(values);
   const fieldContainerRefs = useRef(new Map());
   const fieldInputRefs = useRef(new Map());
@@ -687,14 +714,18 @@ export function FormRenderer({
   const previousInteractionModeRef = useRef(null);
   const rootChangesRef = useRef(false);
   const snapshotBaselineRef = useRef(null);
+  const onSnapshotChangeRef = useRef(onSnapshotChange);
+  const appliedSnapshotSeedSignatureRef = useRef(null);
+  const appliedSchemaRef = useRef(schema);
+  const submissionSnapshotRef = useRef(null);
 
   // Interaction mode state (allows switching between edit/readonly at runtime)
   const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
   const [interactionMode, setInteractionMode] = useState(normalizedInitialMode);
 
   // Track changes for discard prompt
-  const initialValuesRef = useRef(cloneDeep(rendererInitialValues || {}));
-  const initialRepeatableStateRef = useRef(cloneDeep(initialRepeatableSeed));
+  const initialValuesRef = useRef(cloneDeep(appliedRendererInitialValues || {}));
+  const initialRepeatableStateRef = useRef(cloneDeep(appliedRepeatableSeed));
   const [hasChanges, setHasChanges] = useState(false);
 
   // Sync interaction mode when prop changes
@@ -718,6 +749,10 @@ export function FormRenderer({
   useEffect(() => {
     valuesRef.current = values;
   }, [values]);
+
+  useEffect(() => {
+    onSnapshotChangeRef.current = onSnapshotChange;
+  }, [onSnapshotChange]);
 
   const markRootDirty = useCallback(() => {
     rootChangesRef.current = true;
@@ -748,7 +783,7 @@ export function FormRenderer({
     ? values?.[statusFieldName] ?? statusField?.default_value ?? null
     : null;
   const { timestamps, timestampsRef, touchUpdatedAt } = useRecordTimestamps({
-    initialValues: initialTimestampSeedValues,
+    initialValues: appliedInitialTimestampSeedValues,
     overrideValues,
     values,
   });
@@ -780,7 +815,39 @@ export function FormRenderer({
 
   useEffect(() => {
     const nextInitialValues = cloneDeep(rendererInitialValues || {});
+    const nextTimestampSeedValues = cloneDeep(initialTimestampSeedValues || {});
     const nextRepeatableState = cloneDeep(initialRepeatableSeed || {});
+    const nextSeedSignature = buildSnapshotSeedSignature(
+      nextInitialValues,
+      nextRepeatableState
+    );
+    const schemaChanged = appliedSchemaRef.current !== schema;
+
+    if (
+      !schemaChanged &&
+      appliedSnapshotSeedSignatureRef.current === nextSeedSignature
+    ) {
+      return;
+    }
+
+    if (
+      !schemaChanged &&
+      appliedSnapshotSeedSignatureRef.current !== null &&
+      snapshotSeedMatchesLiveState(
+        nextInitialValues,
+        nextRepeatableState,
+        submissionSnapshotRef.current
+      )
+    ) {
+      appliedSnapshotSeedSignatureRef.current = nextSeedSignature;
+      return;
+    }
+
+    appliedSchemaRef.current = schema;
+    appliedSnapshotSeedSignatureRef.current = nextSeedSignature;
+    setAppliedRendererInitialValues(nextInitialValues);
+    setAppliedInitialTimestampSeedValues(nextTimestampSeedValues);
+    setAppliedRepeatableSeed(nextRepeatableState);
 
     initialValuesRef.current = nextInitialValues;
     initialRepeatableStateRef.current = nextRepeatableState;
@@ -796,7 +863,13 @@ export function FormRenderer({
     sectionContainerRefs.current.clear();
     resetRootChanges();
     snapshotBaselineRef.current = null;
-  }, [initialRepeatableSeed, rendererInitialValues, resetRootChanges, schema]);
+  }, [
+    initialRepeatableSeed,
+    initialTimestampSeedValues,
+    rendererInitialValues,
+    resetRootChanges,
+    schema,
+  ]);
 
   useEffect(() => {
     loadEventTriggeredRef.current = false;
@@ -1160,25 +1233,30 @@ export function FormRenderer({
   }, [repeatableState, statusFieldName, statusValue, timestamps, values]);
 
   useEffect(() => {
-    if (typeof onSnapshotChange !== 'function') {
+    submissionSnapshotRef.current = submissionSnapshot;
+  }, [submissionSnapshot]);
+
+  useEffect(() => {
+    const handleSnapshotChange = onSnapshotChangeRef.current;
+    if (typeof handleSnapshotChange !== 'function') {
       return;
     }
 
     const nextSnapshot = cloneDeep(submissionSnapshot);
     if (!rootChangesRef.current || snapshotBaselineRef.current === null) {
       snapshotBaselineRef.current = nextSnapshot;
-      onSnapshotChange(nextSnapshot, {
+      handleSnapshotChange(nextSnapshot, {
         kind: 'seed',
         dirty: false,
       });
       return;
     }
 
-    onSnapshotChange(nextSnapshot, {
+    handleSnapshotChange(nextSnapshot, {
       kind: 'change',
       dirty: !deepEqual(snapshotBaselineRef.current, nextSnapshot),
     });
-  }, [onSnapshotChange, submissionSnapshot]);
+  }, [submissionSnapshot]);
 
   const resolveRepeatableInfo = useCallback((field, metadata) => {
     if (!field || !metadata?.repeatableSectionTree) {
