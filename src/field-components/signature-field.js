@@ -9,12 +9,17 @@ import {
 } from 'react-native';
 import Svg, { Path, SvgXml } from 'react-native-svg';
 import { generateUuidV7 } from 'form0-core';
+import { FormHeader } from '../form-header.jsx';
 import { useTheme } from '../theme-context.jsx';
 import { Text } from '../typography.jsx';
 
 const DEFAULT_CANVAS_WIDTH = 320;
 const DEFAULT_CANVAS_HEIGHT = 160;
 const DEFAULT_MODAL_CANVAS_HEIGHT = 240;
+const SIGNATURE_STROKE_WIDTH = 2.5;
+const SIGNATURE_EXPORT_PADDING = 18;
+const SIGNATURE_MIN_EXPORT_WIDTH = 120;
+const SIGNATURE_MIN_EXPORT_HEIGHT = 72;
 const PNG_DATA_PREFIX = /^data:image\/png;base64,/i;
 
 function createClientSignatureId() {
@@ -31,6 +36,100 @@ function toNullableString(value) {
 
 function stripPngDataPrefix(value = '') {
   return typeof value === 'string' ? value.replace(PNG_DATA_PREFIX, '').trim() : '';
+}
+
+function clamp(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+}
+
+function extendBounds(bounds, x, y, radius = 0) {
+  const pointRadius = Number.isFinite(radius) ? Math.max(radius, 0) : 0;
+  const minX = x - pointRadius;
+  const maxX = x + pointRadius;
+  const minY = y - pointRadius;
+  const maxY = y + pointRadius;
+
+  if (!bounds) {
+    return { minX, maxX, minY, maxY };
+  }
+
+  return {
+    minX: Math.min(bounds.minX, minX),
+    maxX: Math.max(bounds.maxX, maxX),
+    minY: Math.min(bounds.minY, minY),
+    maxY: Math.max(bounds.maxY, maxY),
+  };
+}
+
+function expandRangeToMinimum(min, max, minSize, limit) {
+  const safeLimit = Math.max(Number.isFinite(limit) ? limit : 0, 1);
+  let start = clamp(min, 0, safeLimit);
+  let end = clamp(max, 0, safeLimit);
+
+  if (end <= start) {
+    end = Math.min(safeLimit, start + 1);
+  }
+
+  const targetSize = Math.min(Math.max(Math.ceil(minSize), 1), safeLimit);
+  const currentSize = end - start;
+  if (currentSize >= targetSize) {
+    return { start, end };
+  }
+
+  const center = (start + end) / 2;
+  let nextStart = center - targetSize / 2;
+  let nextEnd = center + targetSize / 2;
+
+  if (nextStart < 0) {
+    nextEnd = Math.min(safeLimit, nextEnd - nextStart);
+    nextStart = 0;
+  }
+
+  if (nextEnd > safeLimit) {
+    const overflow = nextEnd - safeLimit;
+    nextStart = Math.max(0, nextStart - overflow);
+    nextEnd = safeLimit;
+  }
+
+  return {
+    start: clamp(nextStart, 0, safeLimit),
+    end: clamp(nextEnd, 0, safeLimit),
+  };
+}
+
+function buildSignatureExportSpec(bounds, canvasWidth, canvasHeight) {
+  if (!bounds) {
+    return null;
+  }
+
+  const safeCanvasWidth = Math.max(Math.round(canvasWidth || DEFAULT_CANVAS_WIDTH), 1);
+  const safeCanvasHeight = Math.max(Math.round(canvasHeight || DEFAULT_MODAL_CANVAS_HEIGHT), 1);
+  const left = clamp(bounds.minX - SIGNATURE_EXPORT_PADDING, 0, safeCanvasWidth);
+  const right = clamp(bounds.maxX + SIGNATURE_EXPORT_PADDING, 0, safeCanvasWidth);
+  const top = clamp(bounds.minY - SIGNATURE_EXPORT_PADDING, 0, safeCanvasHeight);
+  const bottom = clamp(bounds.maxY + SIGNATURE_EXPORT_PADDING, 0, safeCanvasHeight);
+  const horizontalRange = expandRangeToMinimum(
+    left,
+    right,
+    SIGNATURE_MIN_EXPORT_WIDTH,
+    safeCanvasWidth
+  );
+  const verticalRange = expandRangeToMinimum(
+    top,
+    bottom,
+    SIGNATURE_MIN_EXPORT_HEIGHT,
+    safeCanvasHeight
+  );
+
+  return {
+    x: horizontalRange.start,
+    y: verticalRange.start,
+    width: Math.max(horizontalRange.end - horizontalRange.start, 1),
+    height: Math.max(verticalRange.end - verticalRange.start, 1),
+  };
 }
 
 function normalizeSignatureValue(value) {
@@ -131,9 +230,12 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
     height: DEFAULT_MODAL_CANVAS_HEIGHT,
   });
   const draftStrokesRef = useRef(draftStrokes);
-  const signatureSvgRef = useRef(null);
+  const draftBoundsRef = useRef(null);
+  const exportSvgRef = useRef(null);
+  const exportResolverRef = useRef(null);
   const currentPointsRef = useRef([]);
   const [isExportingSignature, setIsExportingSignature] = useState(false);
+  const [exportSpec, setExportSpec] = useState(null);
   const signingCanvasHeight = useMemo(
     () => Math.min(Math.max(Math.round(windowHeight * 0.38), 220), 320),
     [windowHeight]
@@ -150,29 +252,86 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
   useEffect(() => {
     setDraftStrokes([]);
     currentPointsRef.current = [];
+    draftBoundsRef.current = null;
+    setExportSpec(null);
   }, [signatureValueKey]);
 
   const exportSignaturePng = useCallback(() => {
+    const nextExportSpec = buildSignatureExportSpec(
+      draftBoundsRef.current,
+      draftLayout.width,
+      draftLayout.height
+    );
+    if (!nextExportSpec) {
+      return Promise.resolve(null);
+    }
+
     return new Promise((resolve) => {
-      const svgNode = signatureSvgRef.current;
-      if (!svgNode || typeof svgNode.toDataURL !== 'function') {
-        resolve(null);
+      exportResolverRef.current = resolve;
+      setExportSpec(nextExportSpec);
+    });
+  }, [draftLayout.height, draftLayout.width]);
+
+  useEffect(() => {
+    if (!exportSpec || typeof exportResolverRef.current !== 'function') {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const resolveExport = (data) => {
+      const resolver = exportResolverRef.current;
+      exportResolverRef.current = null;
+      setExportSpec(null);
+      if (typeof resolver === 'function') {
+        resolver(data);
+      }
+    };
+
+    requestAnimationFrame(() => {
+      if (cancelled) {
         return;
       }
 
-      requestAnimationFrame(() => {
-        try {
-          svgNode.toDataURL((data) => {
+      const svgNode = exportSvgRef.current;
+      if (!svgNode || typeof svgNode.toDataURL !== 'function') {
+        resolveExport(null);
+        return;
+      }
+
+      try {
+        svgNode.toDataURL(
+          (data) => {
+            if (cancelled) {
+              return;
+            }
             const normalizedData = stripPngDataPrefix(data);
-            resolve(normalizedData || null);
-          });
-        } catch (error) {
-          console.warn('form0-react-native: failed to export signature as PNG.', error);
-          resolve(null);
-        }
-      });
+            resolveExport(normalizedData || null);
+          },
+          {
+            width: Math.max(Math.round(exportSpec.width), 1),
+            height: Math.max(Math.round(exportSpec.height), 1),
+          }
+        );
+      } catch (error) {
+        console.warn('form0-react-native: failed to export signature as PNG.', error);
+        resolveExport(null);
+      }
     });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [exportSpec]);
+
+  useEffect(
+    () => () => {
+      if (typeof exportResolverRef.current === 'function') {
+        exportResolverRef.current(null);
+        exportResolverRef.current = null;
+      }
+    },
+    []
+  );
 
   const commitSignatureValue = useCallback(async () => {
     if (typeof onChange !== 'function' || isReadOnly) {
@@ -213,6 +372,12 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
     (x, y) => {
       const nextPoints = [{ x, y }];
       currentPointsRef.current = nextPoints;
+      draftBoundsRef.current = extendBounds(
+        draftBoundsRef.current,
+        x,
+        y,
+        SIGNATURE_STROKE_WIDTH
+      );
       setDraftStrokes((prev) => [...prev, { d: `M ${x.toFixed(2)} ${y.toFixed(2)}` }]);
     },
     []
@@ -220,6 +385,7 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
 
   const appendPoint = useCallback((x, y) => {
     currentPointsRef.current = [...currentPointsRef.current, { x, y }];
+    draftBoundsRef.current = extendBounds(draftBoundsRef.current, x, y, SIGNATURE_STROKE_WIDTH);
     setDraftStrokes((prev) => {
       if (prev.length === 0) {
         return prev;
@@ -265,6 +431,8 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
     currentPointsRef.current = [];
     setDraftStrokes([]);
     setIsExportingSignature(false);
+    draftBoundsRef.current = null;
+    setExportSpec(null);
     setDraftLayout({
       width: Math.max(windowWidth - 32, DEFAULT_CANVAS_WIDTH),
       height: signingCanvasHeight,
@@ -276,6 +444,8 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
     currentPointsRef.current = [];
     setDraftStrokes([]);
     setIsExportingSignature(false);
+    draftBoundsRef.current = null;
+    setExportSpec(null);
     setIsPadVisible(false);
   }, []);
 
@@ -303,6 +473,8 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
 
     currentPointsRef.current = [];
     setDraftStrokes([]);
+    draftBoundsRef.current = null;
+    setExportSpec(null);
     if (typeof onChange === 'function') {
       onChange(null);
     }
@@ -312,6 +484,8 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
     currentPointsRef.current = [];
     setDraftStrokes([]);
     setIsExportingSignature(false);
+    draftBoundsRef.current = null;
+    setExportSpec(null);
   }, []);
 
   const showExistingPreview = Boolean(preview.svgXml || preview.imageUri);
@@ -434,75 +608,32 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
         statusBarTranslucent
       >
         <View style={{ flex: 1, backgroundColor: theme.color.background }}>
+          <FormHeader
+            formName={field?.label || 'Capture signature'}
+            mode="edit"
+            leftAction={{
+              id: 'cancel',
+              label: 'Cancel',
+              variant: 'cancel',
+              onPress: handleClosePad,
+            }}
+            rightAction={{
+              id: 'save',
+              label: isExportingSignature ? 'Saving...' : 'Save',
+              variant: 'primary',
+              onPress: handleSaveSignature,
+              disabled: !draftHasStrokes || isExportingSignature,
+            }}
+            showPrimaryActionsInViewMode={false}
+          />
           <View
             style={{
               paddingHorizontal: 16,
-              paddingTop: 18,
-              paddingBottom: 12,
-              borderBottomWidth: 1,
-              borderBottomColor: theme.color.border,
-              gap: 12,
+              paddingTop: 12,
+              paddingBottom: 4,
+              gap: 8,
             }}
           >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-              }}
-            >
-              <Pressable
-                onPress={handleClosePad}
-                style={({ pressed }) => ({
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: theme.borderRadius.full,
-                  backgroundColor: pressed ? theme.color.cancelHoverBg : theme.color.cancelBg,
-                })}
-              >
-                <Text style={{ color: theme.color.cancelFg, fontSize: theme.fontSize.sm }}>
-                  Cancel
-                </Text>
-              </Pressable>
-              <Text
-                style={{
-                  color: theme.color.foreground,
-                  fontSize: theme.fontSize.base,
-                  fontWeight: theme.fontWeight.bold,
-                  flex: 1,
-                  textAlign: 'center',
-                }}
-                numberOfLines={1}
-              >
-                {field?.label || 'Capture signature'}
-              </Text>
-              <Pressable
-                onPress={handleSaveSignature}
-                disabled={!draftHasStrokes || isExportingSignature}
-                style={({ pressed }) => ({
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: theme.borderRadius.full,
-                  backgroundColor: draftHasStrokes && !isExportingSignature
-                    ? pressed
-                      ? theme.color.buttonHoverBg
-                      : theme.color.buttonBg
-                    : theme.color.buttonDisabledBg || theme.color.inputDisabledBg,
-                })}
-              >
-                <Text
-                  style={{
-                    color: draftHasStrokes && !isExportingSignature
-                      ? theme.color.buttonFg
-                      : theme.color.buttonDisabledFg || theme.color.inputDisabledFg,
-                    fontSize: theme.fontSize.sm,
-                  }}
-                >
-                  {isExportingSignature ? 'Saving...' : 'Save'}
-                </Text>
-              </Pressable>
-            </View>
             {agreementText ? (
               <Text style={{ color: theme.color.description, fontSize: theme.fontSize.sm }}>
                 {agreementText}
@@ -558,7 +689,6 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
                 ) : null}
                 {draftHasStrokes ? (
                   <Svg
-                    ref={signatureSvgRef}
                     collapsable={false}
                     width="100%"
                     height="100%"
@@ -597,6 +727,37 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
               </Pressable>
             </View>
           </View>
+          {exportSpec ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: -10000,
+                top: -10000,
+                opacity: 0,
+              }}
+            >
+              <Svg
+                ref={exportSvgRef}
+                collapsable={false}
+                width={exportSpec.width}
+                height={exportSpec.height}
+                viewBox={`${exportSpec.x} ${exportSpec.y} ${exportSpec.width} ${exportSpec.height}`}
+              >
+                {draftStrokes.map((stroke, index) => (
+                  <Path
+                    key={`export-stroke-${index}`}
+                    d={stroke.d}
+                    fill="none"
+                    stroke={canvasForeground}
+                    strokeWidth={SIGNATURE_STROKE_WIDTH}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ))}
+              </Svg>
+            </View>
+          ) : null}
         </View>
       </Modal>
     </View>

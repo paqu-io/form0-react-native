@@ -2834,9 +2834,14 @@ function RepeatableEditorScreen({
   const fieldContainerRefs = useRef(new Map());
   const fieldInputRefs = useRef(new Map());
   const sectionContainerRefs = useRef(new Map());
-  const initialInstance =
-    cloneDeep(screen.initialInstance || screen.draft || createEmptyRepeatableInstance(screen.repInfo));
-  const baseValues = cloneDeep(screen.parentValues || {});
+  const initialInstance = useMemo(
+    () =>
+      cloneDeep(
+        screen.initialInstance || screen.draft || createEmptyRepeatableInstance(screen.repInfo)
+      ),
+    [screen.screenId]
+  );
+  const baseValues = useMemo(() => cloneDeep(screen.parentValues || {}), [screen.screenId]);
   const { activeAlert, closeAlert, handleOperations } = useOperationAlertBridge(
     screen.engineOptions?.onOperations
   );
@@ -2963,8 +2968,8 @@ function RepeatableEditorScreen({
     loadEventTriggeredRef.current = false;
     previousInteractionModeRef.current = null;
     initialSnapshotRef.current = {
-      values: initialInstance?.values || {},
-      repeatable: initialInstance?.repeatable || {},
+      values: cloneDeep(initialInstance?.values || {}),
+      repeatable: cloneDeep(initialInstance?.repeatable || {}),
     };
   }, [initialInstance, screen.screenId]);
 
