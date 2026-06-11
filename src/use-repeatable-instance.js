@@ -31,6 +31,12 @@ const createEmptyState = (repInfo) => {
   };
 };
 
+const buildInstanceSeedSignature = (instance = {}) =>
+  JSON.stringify({
+    values: instance?.values || {},
+    repeatable: instance?.repeatable || {},
+  });
+
 export function useRepeatableInstanceEngine({
   schema,
   repInfo,
@@ -49,18 +55,18 @@ export function useRepeatableInstanceEngine({
   const repeatableStateRef = useRef(cloneDeep(initialInstance?.repeatable || {}));
   const optionsRef = useRef(options || {});
   const warningCleanupRef = useRef(null);
-  const initialSignature = useMemo(
-    () => JSON.stringify(initialInstance?.values || {}),
+  const initialSeedSignature = useMemo(
+    () => buildInstanceSeedSignature(initialInstance),
     [initialInstance]
   );
   const baseValuesSignature = useMemo(() => JSON.stringify(baseValues || {}), [baseValues]);
 
   useEffect(() => {
-    valuesRef.current = initialInstance?.values || {};
+    valuesRef.current = cloneDeep(initialInstance?.values || {});
     const nextRepeatableState = cloneDeep(initialInstance?.repeatable || {});
     repeatableStateRef.current = nextRepeatableState;
     setRepeatableState(nextRepeatableState);
-  }, [initialSignature, initialInstance]);
+  }, [initialSeedSignature]);
 
   useEffect(() => {
     repeatableStateRef.current = repeatableState;

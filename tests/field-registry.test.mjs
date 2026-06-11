@@ -77,6 +77,18 @@ test('field registry still merges renderer overrides', () => {
     /mime_type:\s*'image\/png'/,
     'Native SignatureField should persist signatures as PNG for parity with web',
   );
+
+  assert.match(
+    signatureFieldSource,
+    /buildSignatureExportSpec/,
+    'Native SignatureField should crop the exported signature to the drawn bounds',
+  );
+
+  assert.match(
+    signatureFieldSource,
+    /<FormHeader/,
+    'Native SignatureField should reuse the safe-area-aware form header inside the signing modal',
+  );
 });
 
 test('form renderer exposes parity-facing snapshot and engine APIs', () => {
@@ -186,13 +198,13 @@ test('repeatable screens keep a mounted stack and save through the controller co
 
   assert.match(
     formRendererSource,
-    /const initialInstance =\s*cloneDeep\(screen\.initialInstance/,
+    /const initialInstance = useMemo\(/,
     'Repeatable editors should consume a frozen initial instance from the screen config',
   );
 
   assert.match(
     formRendererSource,
-    /const baseValues = cloneDeep\(screen\.parentValues \|\| \{\}\);/,
+    /const baseValues = useMemo\(\(\) => cloneDeep\(screen\.parentValues \|\| \{\}\), \[screen\.screenId\]\);/,
     'Repeatable editors should consume frozen parent values from the screen config',
   );
 });
@@ -318,6 +330,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     formRendererSource,
     /const valuesRef = useRef\(values\);/,
     'Root repeatable controller should read live values through a ref',
+  );
+
+  assert.match(
+    repeatableInstanceSource,
+    /const initialSeedSignature = useMemo\(/,
+    'Repeatable instance engine should compare the full seed by content to avoid render loops',
   );
 
   assert.match(
