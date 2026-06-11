@@ -36,8 +36,10 @@ export function useRepeatableInstanceEngine({
   repInfo,
   baseValues = {},
   initialInstance = {},
+  options = {},
 }) {
   const [state, setState] = useState(() => createEmptyState(repInfo));
+  const [engineReadyVersion, setEngineReadyVersion] = useState(0);
   const [repeatableState, setRepeatableState] = useState(
     () => cloneDeep(initialInstance?.repeatable || {})
   );
@@ -45,6 +47,8 @@ export function useRepeatableInstanceEngine({
   const baseValuesRef = useRef(baseValues || {});
   const valuesRef = useRef(initialInstance?.values || {});
   const repeatableStateRef = useRef(cloneDeep(initialInstance?.repeatable || {}));
+  const optionsRef = useRef(options || {});
+  const warningCleanupRef = useRef(null);
   const initialSignature = useMemo(
     () => JSON.stringify(initialInstance?.values || {}),
     [initialInstance]
@@ -61,6 +65,10 @@ export function useRepeatableInstanceEngine({
   useEffect(() => {
     repeatableStateRef.current = repeatableState;
   }, [repeatableState]);
+
+  useEffect(() => {
+    optionsRef.current = options || {};
+  }, [options]);
 
   const fieldNames = useMemo(() => {
     if (!repInfo?.fields) return [];
@@ -102,6 +110,8 @@ export function useRepeatableInstanceEngine({
       const engine = createFormEngine({
         schema,
         initialValues: mergedValues,
+        helpers: optionsRef.current.helpers,
+        security: optionsRef.current.security,
       });
       engine.eval();
       return engine;
@@ -132,6 +142,7 @@ export function useRepeatableInstanceEngine({
       const engine = buildEngine(instanceValues);
       engineRef.current = engine;
       syncState(engine);
+      setEngineReadyVersion((version) => version + 1);
     },
     [buildEngine, repInfo, schema, syncState]
   );
@@ -189,6 +200,87 @@ export function useRepeatableInstanceEngine({
       setValues({ [field]: value });
     },
     [setValues]
+  );
+
+  const defaultProcessOperations = useCallback(
+    (operations = []) => {
+      if (!Array.isArray(operations) || operations.length === 0) {
+        return;
+      }
+
+      const pendingValueUpdates = {};
+
+      operations.forEach((operation) => {
+        if (!operation || typeof operation !== 'object') {
+          return;
+        }
+
+        const { type, operation: operationName, params = {} } = operation;
+        if (type === 'FIELD_OPERATION' && operationName === 'SETVALUE') {
+          const { fieldDataName, valueToSet } = params || {};
+          if (typeof fieldDataName !== 'string' || fieldDataName.length === 0) {
+            console.warn('form0-react-native: SETVALUE operation missing fieldDataName.', operation);
+            return;
+          }
+          pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
+          return;
+        }
+
+        if (type === 'UI_OPERATION' || type === 'FIELD_OPERATION') {
+          console.warn(
+            'form0-react-native: unhandled repeatable operation received. Provide engineOptions.onOperations to customize it.',
+            operation
+          );
+        }
+      });
+
+      if (Object.keys(pendingValueUpdates).length > 0) {
+        setValues(pendingValueUpdates);
+      }
+    },
+    [setValues]
+  );
+
+  const processOperations = useCallback(
+    (operations = [], meta = {}) => {
+      if (!Array.isArray(operations) || operations.length === 0) {
+        return;
+      }
+
+      const handler = optionsRef.current.onOperations;
+      if (typeof handler === 'function') {
+        handler(operations, meta, defaultProcessOperations);
+        return;
+      }
+
+      defaultProcessOperations(operations, meta);
+    },
+    [defaultProcessOperations]
+  );
+
+  const triggerEvent = useCallback(
+    (eventType, fieldKey = null, metadata = {}) => {
+      if (typeof eventType !== 'string' || eventType.length === 0) {
+        console.warn('form0-react-native: triggerEvent requires a non-empty eventType string.');
+        return [];
+      }
+
+      if (!engineRef.current) {
+        return [];
+      }
+
+      try {
+        const operations = engineRef.current.trigger(eventType, fieldKey, metadata) || [];
+        if (operations.length > 0) {
+          processOperations(operations, { eventType, fieldKey, metadata });
+        }
+        return operations;
+      } catch (error) {
+        console.warn('form0-react-native: triggerEvent failed inside repeatable editor.', error);
+        return [];
+      }
+    },
+    [processOperations]
   );
 
   const repeatableMetadata = useMemo(() => {
@@ -292,11 +384,65 @@ export function useRepeatableInstanceEngine({
     []
   );
 
+  useEffect(() => {
+    const handler = optionsRef.current.onUpdate;
+    if (typeof handler === 'function' && engineRef.current) {
+      handler({ ...state }, engineRef.current);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (warningCleanupRef.current) {
+      warningCleanupRef.current();
+      warningCleanupRef.current = null;
+    }
+
+    const warningHandler = optionsRef.current.onWarning;
+    if (typeof warningHandler !== 'function') {
+      return;
+    }
+
+    const warningSystem = engineRef.current?.getWarningSystem?.();
+    if (!warningSystem || typeof warningSystem.addWarningHandler !== 'function') {
+      return;
+    }
+
+    const proxy = (warning) => {
+      const latest = optionsRef.current.onWarning;
+      if (typeof latest === 'function') {
+        latest(warning);
+      }
+    };
+
+    warningSystem.addWarningHandler(proxy);
+    warningCleanupRef.current = () => warningSystem.removeWarningHandler(proxy);
+
+    return () => {
+      if (warningCleanupRef.current) {
+        warningCleanupRef.current();
+        warningCleanupRef.current = null;
+      } else {
+        warningSystem.removeWarningHandler(proxy);
+      }
+    };
+  }, [engineReadyVersion, options?.onWarning]);
+
+  useEffect(() => {
+    return () => {
+      if (warningCleanupRef.current) {
+        warningCleanupRef.current();
+        warningCleanupRef.current = null;
+      }
+    };
+  }, []);
+
   return {
     ...state,
     setValue,
     setValues,
     submit: () => cloneDeep(state.values),
+    triggerEvent,
+    processOperations,
     repeatable: repeatableState,
     addRepeatableInstance,
     updateRepeatableInstance,
@@ -306,5 +452,6 @@ export function useRepeatableInstanceEngine({
     getRepeatableInstance,
     repeatableMetadata,
     buildParentValues: buildParentValuesForPath,
+    engineReadyVersion,
   };
 }

@@ -44,6 +44,8 @@ import {
 import { isFieldValueEmpty } from './helpers/is-field-value-empty.js';
 import {
   buildStructuredSubmission,
+  buildSubmissionRawValues,
+  buildSubmissionTimestampSnapshot,
   DEFAULT_FIELD_KEY_MODE,
 } from './utils/submission.js';
 
@@ -330,11 +332,272 @@ function deepEqual(a, b) {
   return keysA.every((key) => deepEqual(a[key], b[key]));
 }
 
+function hasSectionNodes(sectionTree = []) {
+  return Array.isArray(sectionTree) && sectionTree.length > 0;
+}
+
+function buildNavigationIssues(summary, sectionMetadata = {}, fieldToSectionPath = {}) {
+  if (!summary?.hasErrors) {
+    return [];
+  }
+
+  const issues = Array.isArray(summary.orderedIssues)
+    ? summary.orderedIssues
+    : [
+        ...(Array.isArray(summary.requiredFieldErrors) ? summary.requiredFieldErrors : []),
+        ...(Array.isArray(summary.generalErrors) ? summary.generalErrors : []),
+      ];
+
+  return issues.map((issue, index) => {
+    const fieldName = issue?.fieldName || issue?.field?.data_name || null;
+    const sectionPath = fieldName ? fieldToSectionPath?.[fieldName] : null;
+    const sectionId =
+      Array.isArray(sectionPath) && sectionPath.length > 0
+        ? sectionPath[sectionPath.length - 1]
+        : null;
+    const sectionLabel = sectionId ? sectionMetadata?.[sectionId]?.label || sectionId : null;
+
+    return {
+      id: `${fieldName || 'issue'}-${index}`,
+      fieldName,
+      label: issue?.field?.label || fieldName || `Issue ${index + 1}`,
+      message: issue?.message || 'Validation issue',
+      sectionId,
+      sectionLabel,
+      issue,
+    };
+  });
+}
+
+function isObjectLike(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toNullableString(value) {
+  return value === null || typeof value === 'string' ? value : null;
+}
+
+function getTimestampSourceValue(source, key) {
+  if (!isObjectLike(source)) {
+    return undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, key)) {
+    return source[key];
+  }
+
+  if (key === 'created_at_client' && Object.prototype.hasOwnProperty.call(source, 'created_at')) {
+    return source.created_at;
+  }
+
+  if (key === 'updated_at_client' && Object.prototype.hasOwnProperty.call(source, 'updated_at')) {
+    return source.updated_at;
+  }
+
+  return undefined;
+}
+
+function deriveInitialTimestamps(initialValues, overrideValues) {
+  const now = new Date().toISOString();
+  const resolveValue = (key, fallback) => {
+    const overrideValue = getTimestampSourceValue(overrideValues, key);
+    if (overrideValue !== undefined) {
+      return toNullableString(overrideValue) ?? fallback;
+    }
+
+    const initialValue = getTimestampSourceValue(initialValues, key);
+    if (initialValue !== undefined) {
+      return toNullableString(initialValue) ?? fallback;
+    }
+
+    return fallback;
+  };
+
+  return {
+    created_at_client: resolveValue('created_at_client', now),
+    updated_at_client: resolveValue('updated_at_client', now),
+    created_at_server: resolveValue('created_at_server', null),
+    updated_at_server: resolveValue('updated_at_server', null),
+  };
+}
+
+function areTimestampValuesEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+
+  if (!a || !b) {
+    return false;
+  }
+
+  return (
+    a.created_at_client === b.created_at_client &&
+    a.updated_at_client === b.updated_at_client &&
+    a.created_at_server === b.created_at_server &&
+    a.updated_at_server === b.updated_at_server
+  );
+}
+
+function useRecordTimestamps({ initialValues, overrideValues, values }) {
+  const [timestamps, setTimestamps] = useState(() =>
+    deriveInitialTimestamps(initialValues, overrideValues)
+  );
+  const timestampsRef = useRef(timestamps);
+  const sourcesRef = useRef({ initialValues, overrideValues });
+  const valuesRef = useRef(values);
+  const updateTimerRef = useRef(null);
+
+  const cancelScheduledUpdate = useCallback(() => {
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => cancelScheduledUpdate(), [cancelScheduledUpdate]);
+
+  useEffect(() => {
+    const previousSources = sourcesRef.current;
+    if (
+      previousSources.initialValues === initialValues &&
+      previousSources.overrideValues === overrideValues
+    ) {
+      return;
+    }
+
+    sourcesRef.current = { initialValues, overrideValues };
+    cancelScheduledUpdate();
+    const next = deriveInitialTimestamps(initialValues, overrideValues);
+    setTimestamps((previous) => (areTimestampValuesEqual(previous, next) ? previous : next));
+  }, [cancelScheduledUpdate, initialValues, overrideValues]);
+
+  useEffect(() => {
+    timestampsRef.current = timestamps;
+  }, [timestamps]);
+
+  useEffect(() => {
+    if (valuesRef.current === values) {
+      return undefined;
+    }
+
+    valuesRef.current = values;
+    cancelScheduledUpdate();
+    updateTimerRef.current = setTimeout(() => {
+      updateTimerRef.current = null;
+      setTimestamps((previous) => {
+        const nextUpdatedAt = new Date().toISOString();
+        if (previous.updated_at_client === nextUpdatedAt) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          updated_at_client: nextUpdatedAt,
+        };
+      });
+    }, 500);
+
+    return cancelScheduledUpdate;
+  }, [cancelScheduledUpdate, values]);
+
+  const touchUpdatedAt = useCallback((nextTimestamp = new Date().toISOString()) => {
+    setTimestamps((previous) => {
+      if (previous.updated_at_client === nextTimestamp) {
+        return previous;
+      }
+
+      const next = {
+        ...previous,
+        updated_at_client: nextTimestamp,
+      };
+      timestampsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  return { timestamps, timestampsRef, touchUpdatedAt };
+}
+
+function useOperationAlertBridge(externalOnOperations) {
+  const [alertQueue, setAlertQueue] = useState([]);
+  const [activeAlert, setActiveAlert] = useState(null);
+  const nextAlertIdRef = useRef(0);
+
+  useEffect(() => {
+    if (activeAlert || alertQueue.length === 0) {
+      return;
+    }
+
+    setActiveAlert(alertQueue[0]);
+    setAlertQueue((previous) => previous.slice(1));
+  }, [activeAlert, alertQueue]);
+
+  const closeAlert = useCallback(() => {
+    setActiveAlert(null);
+  }, []);
+
+  const handleOperations = useCallback(
+    (operations = [], meta = {}, fallback = () => {}) => {
+      if (!Array.isArray(operations) || operations.length === 0) {
+        return;
+      }
+
+      let passthroughOperations = [];
+      const flushPassthroughOperations = () => {
+        if (passthroughOperations.length === 0) {
+          return;
+        }
+
+        if (typeof externalOnOperations === 'function') {
+          externalOnOperations(passthroughOperations, meta, fallback);
+        } else {
+          fallback(passthroughOperations, meta);
+        }
+
+        passthroughOperations = [];
+      };
+
+      operations.forEach((operation) => {
+        if (
+          operation?.type === 'UI_OPERATION' &&
+          operation?.operation === 'ALERT'
+        ) {
+          flushPassthroughOperations();
+          nextAlertIdRef.current += 1;
+          setAlertQueue((previous) => [
+            ...previous,
+            {
+              id: `operation-alert-${nextAlertIdRef.current}`,
+              title: operation?.params?.title != null ? String(operation.params.title) : '',
+              message: operation?.params?.message != null ? String(operation.params.message) : '',
+            },
+          ]);
+          return;
+        }
+
+        passthroughOperations.push(operation);
+      });
+
+      flushPassthroughOperations();
+    },
+    [externalOnOperations]
+  );
+
+  return {
+    activeAlert,
+    closeAlert,
+    handleOperations,
+  };
+}
+
 export function FormRenderer({
   schema,
   initialValues = {},
+  initialSnapshot,
   overrideValues,
   onSubmit,
+  onSnapshotChange,
+  forceShowNavigationPanel = false,
   fieldKeyMode = DEFAULT_FIELD_KEY_MODE,
   mode: modeProp = 'edit',
   keyboardScrollOffset = DEFAULT_SCROLL_OFFSET,
@@ -352,8 +615,52 @@ export function FormRenderer({
   colorMode = 'light',
   customTheme = null,
   imageResolver = null,
+  engineOptions,
 }) {
   const mainScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
+  const initialSnapshotRawValues = useMemo(() => {
+    if (!initialSnapshot) {
+      return null;
+    }
+
+    return isObjectLike(initialSnapshot.raw_values) ? initialSnapshot.raw_values : {};
+  }, [initialSnapshot]);
+  const initialSnapshotRepeatable = useMemo(() => {
+    if (!initialSnapshot) {
+      return {};
+    }
+
+    return isObjectLike(initialSnapshot.repeatable) ? initialSnapshot.repeatable : {};
+  }, [initialSnapshot]);
+  const initialTimestampSeedValues = useMemo(() => {
+    if (!initialSnapshot) {
+      return initialValues;
+    }
+
+    const timestampValues = isObjectLike(initialSnapshot.timestamps)
+      ? initialSnapshot.timestamps
+      : {};
+
+    return {
+      ...(initialSnapshotRawValues || {}),
+      ...timestampValues,
+    };
+  }, [initialSnapshot, initialSnapshotRawValues, initialValues]);
+  const rendererInitialValues = initialSnapshot ? initialSnapshotRawValues || {} : initialValues;
+  const initialRepeatableSeed = useMemo(
+    () => cloneDeep(initialSnapshotRepeatable || {}),
+    [initialSnapshotRepeatable]
+  );
+  const { activeAlert, closeAlert, handleOperations } = useOperationAlertBridge(
+    engineOptions?.onOperations
+  );
+  const effectiveEngineOptions = useMemo(
+    () => ({
+      ...(engineOptions || {}),
+      onOperations: handleOperations,
+    }),
+    [engineOptions, handleOperations]
+  );
   const {
     values,
     visible,
@@ -363,22 +670,31 @@ export function FormRenderer({
     setValue,
     submit,
     schema: finalSchema,
-  } = useFormEngine(schema, initialValues, overrideValues);
+    triggerEvent,
+    engineReadyVersion,
+  } = useFormEngine(schema, rendererInitialValues, overrideValues, effectiveEngineOptions);
   const [submitCount, setSubmitCount] = useState(0);
-  const [repeatableState, setRepeatableState] = useState({});
+  const [repeatableState, setRepeatableState] = useState(initialRepeatableSeed);
   const [repeatableStack, setRepeatableStack] = useState([]);
   const [pendingRepeatableRemoval, setPendingRepeatableRemoval] = useState(null);
   const repeatableScreenIdRef = useRef(0);
-  const repeatableStateRef = useRef({});
+  const repeatableStateRef = useRef(initialRepeatableSeed);
   const valuesRef = useRef(values);
+  const fieldContainerRefs = useRef(new Map());
+  const fieldInputRefs = useRef(new Map());
+  const sectionContainerRefs = useRef(new Map());
+  const loadEventTriggeredRef = useRef(false);
+  const previousInteractionModeRef = useRef(null);
+  const rootChangesRef = useRef(false);
+  const snapshotBaselineRef = useRef(null);
 
   // Interaction mode state (allows switching between edit/readonly at runtime)
   const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
   const [interactionMode, setInteractionMode] = useState(normalizedInitialMode);
 
   // Track changes for discard prompt
-  const initialValuesRef = useRef(initialValues);
-  const initialRepeatableStateRef = useRef({});
+  const initialValuesRef = useRef(cloneDeep(rendererInitialValues || {}));
+  const initialRepeatableStateRef = useRef(cloneDeep(initialRepeatableSeed));
   const [hasChanges, setHasChanges] = useState(false);
 
   // Sync interaction mode when prop changes
@@ -403,6 +719,14 @@ export function FormRenderer({
     valuesRef.current = values;
   }, [values]);
 
+  const markRootDirty = useCallback(() => {
+    rootChangesRef.current = true;
+  }, []);
+
+  const resetRootChanges = useCallback(() => {
+    rootChangesRef.current = false;
+  }, []);
+
   const enterEditMode = useCallback(() => {
     setInteractionMode('edit');
   }, []);
@@ -423,6 +747,11 @@ export function FormRenderer({
   const statusValue = statusFieldName
     ? values?.[statusFieldName] ?? statusField?.default_value ?? null
     : null;
+  const { timestamps, timestampsRef, touchUpdatedAt } = useRecordTimestamps({
+    initialValues: initialTimestampSeedValues,
+    overrideValues,
+    values,
+  });
   const validatableRootFields = useMemo(
     () =>
       collectValidatableFields(elements, {
@@ -441,13 +770,61 @@ export function FormRenderer({
   }, []);
 
   // Build section hierarchy for drilldown navigation
-  const { sectionMetadata } = useMemo(
+  const { sectionTree, sectionMetadata, fieldToSectionPath } = useMemo(
     () => buildSectionHierarchy(elements, resolveRepeatableKey),
     [elements, resolveRepeatableKey]
   );
 
   // Drilldown navigation state
   const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
+
+  useEffect(() => {
+    const nextInitialValues = cloneDeep(rendererInitialValues || {});
+    const nextRepeatableState = cloneDeep(initialRepeatableSeed || {});
+
+    initialValuesRef.current = nextInitialValues;
+    initialRepeatableStateRef.current = nextRepeatableState;
+    repeatableStateRef.current = nextRepeatableState;
+
+    setRepeatableState(nextRepeatableState);
+    setRepeatableStack([]);
+    setPendingRepeatableRemoval(null);
+    setSubmitCount(0);
+    setActiveDrilldownPath([]);
+    fieldContainerRefs.current.clear();
+    fieldInputRefs.current.clear();
+    sectionContainerRefs.current.clear();
+    resetRootChanges();
+    snapshotBaselineRef.current = null;
+  }, [initialRepeatableSeed, rendererInitialValues, resetRootChanges, schema]);
+
+  useEffect(() => {
+    loadEventTriggeredRef.current = false;
+    previousInteractionModeRef.current = null;
+  }, [engineReadyVersion]);
+
+  useEffect(() => {
+    if (!engineReadyVersion || loadEventTriggeredRef.current) {
+      return;
+    }
+
+    triggerEvent('load-record');
+    loadEventTriggeredRef.current = true;
+  }, [engineReadyVersion, triggerEvent]);
+
+  useEffect(() => {
+    if (!engineReadyVersion) {
+      return;
+    }
+
+    const previousMode = previousInteractionModeRef.current;
+    const enteringEditMode = interactionMode === 'edit' && previousMode !== 'edit';
+    if (enteringEditMode) {
+      triggerEvent('edit-record');
+    }
+
+    previousInteractionModeRef.current = interactionMode;
+  }, [engineReadyVersion, interactionMode, triggerEvent]);
 
   // Derived drilldown state values
   const activeDrilldownSectionId =
@@ -485,6 +862,128 @@ export function FormRenderer({
     setActiveDrilldownPath(nextDrilldownPath);
   }, [activeDrilldownSectionId, sectionMetadata]);
 
+  const registerRootFieldContainer = useCallback((fieldName, node) => {
+    if (!fieldName) return;
+    if (node) {
+      fieldContainerRefs.current.set(fieldName, node);
+      return;
+    }
+    fieldContainerRefs.current.delete(fieldName);
+  }, []);
+
+  const registerRootFieldInput = useCallback((fieldName, node) => {
+    if (!fieldName) return;
+    if (node) {
+      fieldInputRefs.current.set(fieldName, node);
+      return;
+    }
+    fieldInputRefs.current.delete(fieldName);
+  }, []);
+
+  const registerRootSectionContainer = useCallback((sectionId, node) => {
+    if (!sectionId) return;
+    if (node) {
+      sectionContainerRefs.current.set(sectionId, node);
+      return;
+    }
+    sectionContainerRefs.current.delete(sectionId);
+  }, []);
+
+  const focusRootFieldByName = useCallback(
+    (fieldName) => {
+      if (!fieldName) {
+        return;
+      }
+      const input = fieldInputRefs.current.get(fieldName) || null;
+      const container = fieldContainerRefs.current.get(fieldName) || null;
+      const target = input || container;
+      if (!target) {
+        return;
+      }
+      mainScroll.scrollToTarget(target);
+      if (typeof input?.focus === 'function') {
+        requestAnimationFrame(() => {
+          input.focus();
+        });
+      }
+    },
+    [mainScroll]
+  );
+
+  const focusRootSectionById = useCallback(
+    (sectionId) => {
+      if (!sectionId) {
+        return;
+      }
+      const target = sectionContainerRefs.current.get(sectionId) || null;
+      if (target) {
+        mainScroll.scrollToTarget(target);
+      }
+    },
+    [mainScroll]
+  );
+
+  const navigateToRootSection = useCallback(
+    (sectionId) => {
+      if (!sectionId) {
+        return;
+      }
+
+      const sectionInfo = sectionMetadata?.[sectionId];
+      if (!sectionInfo) {
+        return;
+      }
+
+      const drilldownPath = Array.isArray(sectionInfo.drilldownPath) ? sectionInfo.drilldownPath : [];
+      const opensDrilldown = drilldownPath[drilldownPath.length - 1] === sectionId;
+      if (opensDrilldown) {
+        setActiveDrilldownPath(drilldownPath);
+        return;
+      }
+
+      if (drilldownPath.length > 0) {
+        setActiveDrilldownPath(drilldownPath);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            focusRootSectionById(sectionId);
+          });
+        });
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        focusRootSectionById(sectionId);
+      });
+    },
+    [focusRootSectionById, sectionMetadata]
+  );
+
+  const navigateToRootValidationIssue = useCallback(
+    (issue) => {
+      if (!issue?.fieldName) {
+        return;
+      }
+      const sectionPath = fieldToSectionPath[issue.fieldName];
+      if (Array.isArray(sectionPath) && sectionPath.length > 0) {
+        const targetSectionId = sectionPath[sectionPath.length - 1];
+        const sectionInfo = sectionMetadata[targetSectionId];
+        if (sectionInfo) {
+          setActiveDrilldownPath(sectionInfo.drilldownPath || []);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              focusRootFieldByName(issue.fieldName);
+            });
+          });
+          return;
+        }
+      }
+      requestAnimationFrame(() => {
+        focusRootFieldByName(issue.fieldName);
+      });
+    },
+    [fieldToSectionPath, focusRootFieldByName, sectionMetadata]
+  );
+
   const buildRootValidationSummary = useCallback(
     () =>
       buildValidationSummary(validatableRootFields, {
@@ -507,6 +1006,30 @@ export function FormRenderer({
   const rootValidationSummary = useMemo(
     () => buildRootValidationSummary(),
     [buildRootValidationSummary]
+  );
+  const showRootValidationList = submitCount > 0 && rootValidationSummary?.hasErrors;
+  const rootNavigationIssues = useMemo(
+    () => buildNavigationIssues(rootValidationSummary, sectionMetadata, fieldToSectionPath),
+    [fieldToSectionPath, rootValidationSummary, sectionMetadata]
+  );
+  const rootNavigationPanelAvailable =
+    forceShowNavigationPanel || hasSectionNodes(sectionTree) || showRootValidationList;
+
+  const handleRootFieldValueChange = useCallback(
+    (fieldDef, nextValue, applyValue = setValue) => {
+      if (!fieldDef?.data_name) {
+        return;
+      }
+
+      const dataName = fieldDef.data_name;
+      applyValue(dataName, nextValue);
+      markRootDirty();
+      triggerEvent('change', dataName, {
+        value: nextValue,
+        field: fieldDef,
+      });
+    },
+    [markRootDirty, setValue, triggerEvent]
   );
 
   const getRepeatableInstances = useCallback(
@@ -621,6 +1144,42 @@ export function FormRenderer({
     ]
   );
 
+  const submissionSnapshot = useMemo(() => {
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(timestamps);
+
+    return {
+      raw_values: buildSubmissionRawValues({
+        values,
+        timestampSnapshot,
+        statusFieldName,
+        statusValue,
+      }),
+      repeatable: cloneDeep(repeatableState),
+      timestamps: timestampSnapshot,
+    };
+  }, [repeatableState, statusFieldName, statusValue, timestamps, values]);
+
+  useEffect(() => {
+    if (typeof onSnapshotChange !== 'function') {
+      return;
+    }
+
+    const nextSnapshot = cloneDeep(submissionSnapshot);
+    if (!rootChangesRef.current || snapshotBaselineRef.current === null) {
+      snapshotBaselineRef.current = nextSnapshot;
+      onSnapshotChange(nextSnapshot, {
+        kind: 'seed',
+        dirty: false,
+      });
+      return;
+    }
+
+    onSnapshotChange(nextSnapshot, {
+      kind: 'change',
+      dirty: !deepEqual(snapshotBaselineRef.current, nextSnapshot),
+    });
+  }, [onSnapshotChange, submissionSnapshot]);
+
   const resolveRepeatableInfo = useCallback((field, metadata) => {
     if (!field || !metadata?.repeatableSectionTree) {
       return { repeatableKey: null, repInfo: null };
@@ -669,19 +1228,35 @@ export function FormRenderer({
 
   const openRepeatableEditor = useCallback(
     ({ field, controller, parentPath, repeatableKey, repInfo, instanceId, mode, draft }) => {
+      const frozenParentPath = Array.isArray(parentPath) ? cloneDeep(parentPath) : [];
+      const resolvedInitialInstance =
+        mode === 'edit'
+          ? cloneDeep(
+              controller?.getInstance?.(repeatableKey, instanceId, frozenParentPath) ||
+                draft ||
+                createEmptyRepeatableInstance(repInfo)
+            )
+          : cloneDeep(draft || createEmptyRepeatableInstance(repInfo));
+      const frozenParentValues = cloneDeep(
+        controller?.buildParentValues?.(frozenParentPath) || {}
+      );
+
       pushRepeatableScreen({
         type: 'edit',
         field,
         controller,
-        parentPath,
+        parentPath: frozenParentPath,
         repeatableKey,
         repInfo,
         instanceId,
         mode,
-        draft,
+        draft: resolvedInitialInstance,
+        initialInstance: resolvedInitialInstance,
+        parentValues: frozenParentValues,
+        engineOptions,
       });
     },
-    [pushRepeatableScreen]
+    [engineOptions, pushRepeatableScreen]
   );
 
   const renderElements = useCallback(
@@ -697,7 +1272,9 @@ export function FormRenderer({
         onFieldFocus,
         registerFieldContainer,
         registerFieldInput,
+        registerSectionContainer,
         theme,
+        onFieldChange,
         // Drilldown state passed from parent
         activeDrilldownPath: drilldownPath = [],
         sectionMetadata: sectionMeta = {},
@@ -808,7 +1385,11 @@ export function FormRenderer({
                     controller,
                     parentPath,
                     onFieldFocus,
+                    registerFieldContainer,
+                    registerFieldInput,
+                    registerSectionContainer,
                     theme,
+                    onFieldChange,
                     activeDrilldownPath: drilldownPath,
                     sectionMetadata: sectionMeta,
                     onDrilldownNavigate,
@@ -844,10 +1425,16 @@ export function FormRenderer({
             color: count === 0 ? t.color.description : t.color.bannerEditFg || '#1f2937',
             fontWeight: '600',
           };
+          const repeatableSectionId = field.data_name || field.key || null;
           // Drilldown card style - matches web's drilldownInactive
           return (
             <View
               key={field.key || field.data_name}
+              ref={
+                repeatableSectionId && typeof registerSectionContainer === 'function'
+                  ? (node) => registerSectionContainer(repeatableSectionId, node)
+                  : undefined
+              }
               style={{
                 borderWidth: 1,
                 borderColor: t.color.sectionBorder || t.color.border,
@@ -913,6 +1500,10 @@ export function FormRenderer({
           const sectionId = field.data_name || field.key;
           const display = field.display || 'inline';
           const sectionPath = sectionId ? [...parentSectionPath, sectionId] : parentSectionPath;
+          const sectionRef =
+            sectionId && typeof registerSectionContainer === 'function'
+              ? (node) => registerSectionContainer(sectionId, node)
+              : undefined;
 
           // Handle drilldown sections
           if (display === 'drilldown' && sectionId) {
@@ -938,6 +1529,7 @@ export function FormRenderer({
               return (
                 <View
                   key={sectionId}
+                  ref={sectionRef}
                   style={{
                     borderWidth: 1,
                     borderColor: t.color.sectionBorder || t.color.border,
@@ -1005,7 +1597,11 @@ export function FormRenderer({
                     controller,
                     parentPath,
                     onFieldFocus,
+                    registerFieldContainer,
+                    registerFieldInput,
+                    registerSectionContainer,
                     theme,
+                    onFieldChange,
                     activeDrilldownPath: drilldownPath,
                     sectionMetadata: sectionMeta,
                     onDrilldownNavigate,
@@ -1019,7 +1615,7 @@ export function FormRenderer({
             if (isCurrentLevelActive) {
               // Active drilldown section - render with header and content
               return (
-                <View key={sectionId} style={sectionCardStyle}>
+                <View key={sectionId} ref={sectionRef} style={sectionCardStyle}>
                   {field.label || field.description ? (
                     <View style={sectionHeaderBandStyle}>
                       {field.label ? (
@@ -1055,7 +1651,11 @@ export function FormRenderer({
                       controller,
                       parentPath,
                       onFieldFocus,
+                      registerFieldContainer,
+                      registerFieldInput,
+                      registerSectionContainer,
                       theme,
+                      onFieldChange,
                       activeDrilldownPath: drilldownPath,
                       sectionMetadata: sectionMeta,
                       onDrilldownNavigate,
@@ -1069,7 +1669,11 @@ export function FormRenderer({
 
           // Inline section (default) - render normally
           return (
-            <View key={sectionId || Math.random().toString(36)} style={sectionCardStyle}>
+            <View
+              key={sectionId || Math.random().toString(36)}
+              ref={sectionRef}
+              style={sectionCardStyle}
+            >
               {field.label || field.description ? (
                 <View style={sectionHeaderBandStyle}>
                   {field.label ? (
@@ -1105,7 +1709,11 @@ export function FormRenderer({
                   controller,
                   parentPath,
                   onFieldFocus,
+                  registerFieldContainer,
+                  registerFieldInput,
+                  registerSectionContainer,
                   theme,
+                  onFieldChange,
                   activeDrilldownPath: drilldownPath,
                   sectionMetadata: sectionMeta,
                   onDrilldownNavigate,
@@ -1158,7 +1766,14 @@ export function FormRenderer({
                   : undefined
               }
               onChange={(val) => {
-                if (dataName) applyValue(dataName, val);
+                if (!dataName) {
+                  return;
+                }
+                if (typeof onFieldChange === 'function') {
+                  onFieldChange(field, val, applyValue);
+                  return;
+                }
+                applyValue(dataName, val);
               }}
             />
           </View>
@@ -1208,15 +1823,25 @@ export function FormRenderer({
 
     const validationSummary = rootValidationSummary;
     if (validationSummary?.hasErrors || !onSubmit) {
+      if (validationSummary?.hasErrors) {
+        navigateToRootValidationIssue(getFirstValidationIssue(validationSummary));
+      }
       return;
     }
 
+    const submittedAt = new Date().toISOString();
+    touchUpdatedAt(submittedAt);
     const submissionValues = submit();
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(
+      timestampsRef.current,
+      submittedAt
+    );
     const submission = buildStructuredSubmission({
       schema: finalSchema,
       values: submissionValues,
       repeatable: repeatableStateRef.current,
       fieldKeyMode,
+      timestamps: timestampSnapshot,
     });
 
     onSubmit(submission.structuredRecord, {
@@ -1225,7 +1850,16 @@ export function FormRenderer({
       validationSummary,
       timestamps: submission.timestamps,
     });
-  }, [fieldKeyMode, finalSchema, onSubmit, rootValidationSummary, submit]);
+  }, [
+    fieldKeyMode,
+    finalSchema,
+    navigateToRootValidationIssue,
+    onSubmit,
+    rootValidationSummary,
+    submit,
+    timestampsRef,
+    touchUpdatedAt,
+  ]);
 
   const getRepeatableEntryTitle = (field, instance, index) => {
     const titleFieldDataName = field?.title_field?.data_name;
@@ -1282,9 +1916,11 @@ export function FormRenderer({
           screen.controller.setInstances(repeatableKey, [...existing, payload], parentPath);
         }
       }
+      markRootDirty();
+      touchUpdatedAt();
       popRepeatableScreen();
     },
-    [popRepeatableScreen]
+    [markRootDirty, popRepeatableScreen, touchUpdatedAt]
   );
 
   const requestRepeatableRemoval = useCallback(
@@ -1340,8 +1976,10 @@ export function FormRenderer({
       );
     }
 
+    markRootDirty();
+    touchUpdatedAt();
     setPendingRepeatableRemoval(null);
-  }, [pendingRepeatableRemoval]);
+  }, [markRootDirty, pendingRepeatableRemoval, touchUpdatedAt]);
 
   const formName = finalSchema?.form?.name || null;
 
@@ -1362,7 +2000,11 @@ export function FormRenderer({
         controller: formRepeatableController,
         parentPath: [],
         onFieldFocus: mainScroll.onFieldFocus,
+        registerFieldContainer: registerRootFieldContainer,
+        registerFieldInput: registerRootFieldInput,
+        registerSectionContainer: registerRootSectionContainer,
         theme,
+        onFieldChange: handleRootFieldValueChange,
         // Drilldown state for section rendering
         activeDrilldownPath,
         sectionMetadata,
@@ -1415,6 +2057,7 @@ export function FormRenderer({
               validateBeforeSave
               keyboardScrollOffset={keyboardScrollOffset}
               theme={theme}
+              forceShowNavigationPanel={forceShowNavigationPanel}
             />
           );
 
@@ -1455,6 +2098,13 @@ export function FormRenderer({
             primaryActionMode={primaryActionMode}
             primaryActionLabel={resolvedPrimaryActionLabel}
             showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
+            canOpenNavigationSheet={rootNavigationPanelAvailable}
+            navigationSections={sectionTree}
+            navigationIssues={showRootValidationList ? rootNavigationIssues : []}
+            navigationValidationEnabled={submitCount > 0}
+            onNavigateToSection={navigateToRootSection}
+            onSelectValidationIssue={navigateToRootValidationIssue}
+            activeNavigationSectionId={activeDrilldownSectionId}
             renderRepeatableScreens={renderRepeatableScreens}
             renderMainFormContent={renderMainFormContent}
             // Drilldown state props
@@ -1464,6 +2114,11 @@ export function FormRenderer({
             isRepeatableFirstPage={isRepeatableFirstPage}
             activeDrilldownSectionInfo={activeDrilldownSectionInfo}
             popDrilldownLevel={popDrilldownLevel}
+          />
+          <OperationAlertDialog
+            visible={Boolean(activeAlert)}
+            alert={activeAlert}
+            onClose={closeAlert}
           />
         </FieldRegistryProvider>
       </ImageResolverProvider>
@@ -1486,6 +2141,13 @@ function FormRendererInner({
   primaryActionMode,
   primaryActionLabel,
   showPrimaryActionsInViewMode,
+  canOpenNavigationSheet,
+  navigationSections,
+  navigationIssues,
+  navigationValidationEnabled,
+  onNavigateToSection,
+  onSelectValidationIssue,
+  activeNavigationSectionId,
   renderRepeatableScreens,
   renderMainFormContent,
   // Drilldown state props
@@ -1498,6 +2160,7 @@ function FormRendererInner({
 }) {
   const { theme } = useTheme();
   const isReadOnly = interactionMode === 'readonly';
+  const [navigationSheetVisible, setNavigationSheetVisible] = useState(false);
 
   // Compute header actions based on drilldown state (matching web logic)
   const headerActions = useMemo(() => {
@@ -1598,11 +2261,365 @@ function FormRendererInner({
           secondaryRightAction={headerActions.secondaryRightAction}
           canSubmit={canSubmit}
           showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
+          onTitlePress={
+            canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined
+          }
         />
       )}
 
       {/* Form Content */}
       {activeRepeatableScreen ? renderRepeatableScreens(theme) : renderMainFormContent(theme)}
+      <FormNavigationSheet
+        visible={navigationSheetVisible}
+        title={formName || headerTitle || 'Form navigation'}
+        sections={navigationSections}
+        issues={navigationIssues}
+        validationEnabled={navigationValidationEnabled}
+        activeSectionId={activeNavigationSectionId}
+        onClose={() => setNavigationSheetVisible(false)}
+        onSelectSection={(sectionId) => {
+          setNavigationSheetVisible(false);
+          onNavigateToSection?.(sectionId);
+        }}
+        onSelectIssue={(issue) => {
+          setNavigationSheetVisible(false);
+          onSelectValidationIssue?.(issue);
+        }}
+      />
+    </View>
+  );
+}
+
+function FormNavigationSheet({
+  visible,
+  title,
+  sections = [],
+  issues = [],
+  validationEnabled = false,
+  activeSectionId = null,
+  onClose,
+  onSelectSection,
+  onSelectIssue,
+}) {
+  const { theme } = useTheme();
+  const hasSections = hasSectionNodes(sections);
+  const hasIssues = Array.isArray(issues) && issues.length > 0;
+  const [activeTab, setActiveTab] = useState(hasSections ? 'sections' : 'issues');
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    if (!hasSections && (validationEnabled || hasIssues)) {
+      setActiveTab('issues');
+      return;
+    }
+
+    if (hasSections && activeTab !== 'sections' && !validationEnabled && !hasIssues) {
+      setActiveTab('sections');
+    }
+  }, [activeTab, hasIssues, hasSections, validationEnabled, visible]);
+
+  const validationCount = hasIssues ? issues.length : 0;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.35)',
+          justifyContent: 'flex-end',
+        }}
+        onPress={onClose}
+      >
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={{
+            backgroundColor: theme.color.background,
+            borderTopLeftRadius: theme.borderRadius.lg ?? 16,
+            borderTopRightRadius: theme.borderRadius.lg ?? 16,
+            borderWidth: 1,
+            borderColor: theme.color.border,
+            borderBottomWidth: 0,
+            maxHeight: '72%',
+            overflow: 'hidden',
+          }}
+        >
+          <View
+            style={{
+              alignItems: 'center',
+              paddingTop: 10,
+              paddingBottom: 6,
+            }}
+          >
+            <View
+              style={{
+                width: 44,
+                height: 4,
+                borderRadius: 999,
+                backgroundColor: theme.color.border,
+              }}
+            />
+          </View>
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottomWidth: 1,
+              borderBottomColor: theme.color.border,
+            }}
+          >
+            <Text
+              style={{
+                color: theme.color.foreground,
+                fontWeight: theme.fontWeight.bold,
+                fontSize: theme.fontSize.lg,
+                flex: 1,
+                marginRight: 12,
+              }}
+              numberOfLines={1}
+            >
+              {title || 'Form navigation'}
+            </Text>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => ({
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                backgroundColor: pressed ? theme.color.cancelHoverBg : theme.color.cancelBg,
+              })}
+            >
+              <Text style={{ color: theme.color.cancelFg, fontWeight: '600' }}>Done</Text>
+            </Pressable>
+          </View>
+          <View
+            style={{
+              padding: 12,
+              flexDirection: 'row',
+              gap: 8,
+              borderBottomWidth: 1,
+              borderBottomColor: theme.color.border,
+            }}
+          >
+            <Pressable
+              onPress={() => setActiveTab('sections')}
+              style={({ pressed }) => ({
+                flex: 1,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor:
+                  activeTab === 'sections' ? theme.color.buttonBorder : theme.color.border,
+                backgroundColor:
+                  activeTab === 'sections'
+                    ? theme.color.buttonBg
+                    : pressed
+                      ? theme.color.cancelHoverBg
+                      : theme.color.section,
+                opacity: hasSections ? 1 : 0.9,
+              })}
+            >
+              <Text
+                style={{
+                  color:
+                    activeTab === 'sections' ? theme.color.buttonFg : theme.color.foreground,
+                  textAlign: 'center',
+                  fontWeight: '600',
+                }}
+              >
+                Sections
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveTab('issues')}
+              style={({ pressed }) => ({
+                flex: 1,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor:
+                  activeTab === 'issues' ? theme.color.buttonBorder : theme.color.border,
+                backgroundColor:
+                  activeTab === 'issues'
+                    ? theme.color.buttonBg
+                    : pressed
+                      ? theme.color.cancelHoverBg
+                      : theme.color.section,
+              })}
+            >
+              <Text
+                style={{
+                  color: activeTab === 'issues' ? theme.color.buttonFg : theme.color.foreground,
+                  textAlign: 'center',
+                  fontWeight: '600',
+                }}
+              >
+                {`Issues${validationCount > 0 ? ` (${validationCount})` : ''}`}
+              </Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            contentContainerStyle={{
+              padding: 16,
+              paddingBottom: 28,
+              gap: 10,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {activeTab === 'issues' ? (
+              validationEnabled ? (
+                hasIssues ? (
+                  issues.map((issue) => (
+                    <Pressable
+                      key={issue.id}
+                      onPress={() => onSelectIssue?.(issue)}
+                      style={({ pressed }) => ({
+                        borderWidth: 1,
+                        borderColor: theme.color.border,
+                        borderRadius: theme.borderRadius.md ?? 10,
+                        padding: 14,
+                        backgroundColor: pressed ? theme.color.cancelHoverBg : theme.color.section,
+                      })}
+                    >
+                      <Text
+                        style={{
+                          color: theme.color.foreground,
+                          fontWeight: '600',
+                          marginBottom: 4,
+                        }}
+                      >
+                        {issue.label}
+                      </Text>
+                      <Text
+                        style={{
+                          color: theme.color.error,
+                          marginBottom: issue.sectionLabel ? 6 : 0,
+                        }}
+                      >
+                        {issue.message}
+                      </Text>
+                      {issue.sectionLabel ? (
+                        <Text style={{ color: theme.color.description, fontSize: theme.fontSize.sm }}>
+                          {issue.sectionLabel}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={{ color: theme.color.description }}>
+                    No validation issues.
+                  </Text>
+                )
+              ) : (
+                <Text style={{ color: theme.color.description }}>
+                  Submit or validate the form to view validation issues.
+                </Text>
+              )
+            ) : hasSections ? (
+              <NavigationSectionTree
+                sections={sections}
+                activeSectionId={activeSectionId}
+                onSelectSection={onSelectSection}
+              />
+            ) : (
+              <Text style={{ color: theme.color.description }}>
+                This form has no sections.
+              </Text>
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function NavigationSectionTree({ sections = [], activeSectionId = null, onSelectSection }) {
+  const { theme } = useTheme();
+
+  return (
+    <View style={{ gap: 8 }}>
+      {sections.map((section) => (
+        <NavigationSectionNode
+          key={section.id}
+          node={section}
+          level={0}
+          activeSectionId={activeSectionId}
+          onSelectSection={onSelectSection}
+          theme={theme}
+        />
+      ))}
+    </View>
+  );
+}
+
+function NavigationSectionNode({
+  node,
+  level,
+  activeSectionId,
+  onSelectSection,
+  theme,
+}) {
+  if (!node?.id) {
+    return null;
+  }
+
+  const isActive = node.id === activeSectionId;
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+
+  return (
+    <View style={{ gap: 8 }}>
+      <Pressable
+        onPress={() => onSelectSection?.(node.id)}
+        style={({ pressed }) => ({
+          marginLeft: level * 14,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: isActive ? theme.color.buttonBorder : theme.color.border,
+          backgroundColor: isActive
+            ? theme.color.buttonBg
+            : pressed
+              ? theme.color.cancelHoverBg
+              : theme.color.section,
+        })}
+      >
+        <Text
+          style={{
+            color: isActive ? theme.color.buttonFg : theme.color.foreground,
+            fontWeight: '600',
+          }}
+        >
+          {node.label || 'Section'}
+        </Text>
+      </Pressable>
+      {hasChildren ? (
+        <View style={{ gap: 8 }}>
+          {node.children.map((child) => (
+            <NavigationSectionNode
+              key={child.id}
+              node={child}
+              level={level + 1}
+              activeSectionId={activeSectionId}
+              onSelectSection={onSelectSection}
+              theme={theme}
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1733,22 +2750,25 @@ function RepeatableEditorScreen({
   validateBeforeSave = true,
   keyboardScrollOffset,
   theme,
+  forceShowNavigationPanel = false,
 }) {
   const editorScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
   const fieldContainerRefs = useRef(new Map());
   const fieldInputRefs = useRef(new Map());
+  const sectionContainerRefs = useRef(new Map());
   const initialInstance =
-    screen.mode === 'edit'
-      ? screen.controller?.getInstance(
-          screen.repeatableKey,
-          screen.instanceId,
-          screen.parentPath
-        )
-      : screen.draft;
-  // Follow-up parity work with form0-react should freeze initialInstance and parentValues
-  // into the screen object when the editor opens, instead of re-deriving them from the
-  // controller while hidden stack screens stay mounted.
-  const baseValues = screen.controller?.buildParentValues?.(screen.parentPath) || {};
+    cloneDeep(screen.initialInstance || screen.draft || createEmptyRepeatableInstance(screen.repInfo));
+  const baseValues = cloneDeep(screen.parentValues || {});
+  const { activeAlert, closeAlert, handleOperations } = useOperationAlertBridge(
+    screen.engineOptions?.onOperations
+  );
+  const effectiveEngineOptions = useMemo(
+    () => ({
+      ...(screen.engineOptions || {}),
+      onOperations: handleOperations,
+    }),
+    [handleOperations, screen.engineOptions]
+  );
   const {
     values,
     visible,
@@ -1766,17 +2786,38 @@ function RepeatableEditorScreen({
     setRepeatableInstances,
     getRepeatableInstance,
     buildParentValues,
+    triggerEvent,
+    engineReadyVersion,
   } = useRepeatableInstanceEngine({
     schema,
     repInfo: screen.repInfo,
     baseValues,
     initialInstance: initialInstance || createEmptyRepeatableInstance(screen.repInfo),
+    options: effectiveEngineOptions,
   });
   const [submitCount, setSubmitCount] = useState(0);
   const [discardDialogVisible, setDiscardDialogVisible] = useState(false);
   const initialSnapshotRef = useRef({
     values: initialInstance?.values || {},
     repeatable: initialInstance?.repeatable || {},
+  });
+  const loadEventTriggeredRef = useRef(false);
+  const previousInteractionModeRef = useRef(null);
+
+  const initialTimestampSeedValues = useMemo(
+    () => ({
+      ...(initialInstance?.values || {}),
+      created_at_client: initialInstance?.created_at_client ?? initialInstance?.created_at,
+      updated_at_client: initialInstance?.updated_at_client ?? initialInstance?.updated_at,
+      created_at_server: initialInstance?.created_at_server ?? null,
+      updated_at_server: initialInstance?.updated_at_server ?? null,
+    }),
+    [initialInstance]
+  );
+  const { timestampsRef, touchUpdatedAt } = useRecordTimestamps({
+    initialValues: initialTimestampSeedValues,
+    overrideValues: null,
+    values,
   });
 
   const instanceId = initialInstance?.id || screen.instanceId;
@@ -1811,6 +2852,7 @@ function RepeatableEditorScreen({
     return field.data_name || null;
   }, []);
   const {
+    sectionTree: editorSectionTree,
     sectionMetadata: editorSectionMetadata,
     fieldToSectionPath: editorFieldToSectionPath,
   } = useMemo(
@@ -1818,6 +2860,7 @@ function RepeatableEditorScreen({
     [resolveNestedRepeatableKey, screen.repInfo?.field?.elements]
   );
   const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
+  const [navigationSheetVisible, setNavigationSheetVisible] = useState(false);
   const activeDrilldownSectionId =
     activeDrilldownPath.length > 0 ? activeDrilldownPath[activeDrilldownPath.length - 1] : null;
   const activeDrilldownSectionInfo = activeDrilldownSectionId
@@ -1834,20 +2877,68 @@ function RepeatableEditorScreen({
   useEffect(() => {
     setSubmitCount(0);
     setDiscardDialogVisible(false);
+    setNavigationSheetVisible(false);
     setActiveDrilldownPath([]);
     fieldContainerRefs.current.clear();
     fieldInputRefs.current.clear();
+    sectionContainerRefs.current.clear();
+    loadEventTriggeredRef.current = false;
+    previousInteractionModeRef.current = null;
     initialSnapshotRef.current = {
       values: initialInstance?.values || {},
       repeatable: initialInstance?.repeatable || {},
     };
   }, [initialInstance, screen.screenId]);
 
+  useEffect(() => {
+    loadEventTriggeredRef.current = false;
+    previousInteractionModeRef.current = null;
+  }, [engineReadyVersion]);
+
+  useEffect(() => {
+    if (!engineReadyVersion || loadEventTriggeredRef.current) {
+      return;
+    }
+
+    triggerEvent('load-record');
+    loadEventTriggeredRef.current = true;
+  }, [engineReadyVersion, triggerEvent]);
+
+  useEffect(() => {
+    if (!engineReadyVersion) {
+      return;
+    }
+
+    const interactionMode = readOnly ? 'readonly' : 'edit';
+    const previousMode = previousInteractionModeRef.current;
+    if (interactionMode === 'edit' && previousMode !== 'edit') {
+      triggerEvent('edit-record');
+    }
+
+    previousInteractionModeRef.current = interactionMode;
+  }, [engineReadyVersion, readOnly, triggerEvent]);
+
   const hasEntryChanges = useMemo(
     () =>
       !deepEqual(values, initialSnapshotRef.current.values) ||
       !deepEqual(repeatable, initialSnapshotRef.current.repeatable),
     [repeatable, values]
+  );
+
+  const handleRepeatableFieldValueChange = useCallback(
+    (fieldDef, nextValue, applyValue = setValue) => {
+      if (!fieldDef?.data_name) {
+        return;
+      }
+
+      const dataName = fieldDef.data_name;
+      applyValue(dataName, nextValue);
+      triggerEvent('change', dataName, {
+        value: nextValue,
+        field: fieldDef,
+      });
+    },
+    [setValue, triggerEvent]
   );
 
   const registerFieldContainer = useCallback((fieldName, node) => {
@@ -1866,6 +2957,15 @@ function RepeatableEditorScreen({
       return;
     }
     fieldInputRefs.current.delete(fieldName);
+  }, []);
+
+  const registerSectionContainer = useCallback((sectionId, node) => {
+    if (!sectionId) return;
+    if (node) {
+      sectionContainerRefs.current.set(sectionId, node);
+      return;
+    }
+    sectionContainerRefs.current.delete(sectionId);
   }, []);
 
   const focusFieldByName = useCallback(
@@ -1898,6 +2998,19 @@ function RepeatableEditorScreen({
     [editorSectionMetadata]
   );
 
+  const focusSectionById = useCallback(
+    (sectionId) => {
+      if (!sectionId) {
+        return;
+      }
+      const target = sectionContainerRefs.current.get(sectionId) || null;
+      if (target) {
+        editorScroll.scrollToTarget(target);
+      }
+    },
+    [editorScroll]
+  );
+
   const popEditorDrilldownLevel = useCallback(() => {
     if (!activeDrilldownSectionId) {
       setActiveDrilldownPath([]);
@@ -1910,6 +3023,41 @@ function RepeatableEditorScreen({
     }
     setActiveDrilldownPath(info.drilldownPath.slice(0, -1));
   }, [activeDrilldownSectionId, editorSectionMetadata]);
+
+  const navigateToEditorSection = useCallback(
+    (sectionId) => {
+      if (!sectionId) {
+        return;
+      }
+
+      const sectionInfo = editorSectionMetadata?.[sectionId];
+      if (!sectionInfo) {
+        return;
+      }
+
+      const drilldownPath = Array.isArray(sectionInfo.drilldownPath) ? sectionInfo.drilldownPath : [];
+      const opensDrilldown = drilldownPath[drilldownPath.length - 1] === sectionId;
+      if (opensDrilldown) {
+        setActiveDrilldownPath(drilldownPath);
+        return;
+      }
+
+      if (drilldownPath.length > 0) {
+        setActiveDrilldownPath(drilldownPath);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            focusSectionById(sectionId);
+          });
+        });
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        focusSectionById(sectionId);
+      });
+    },
+    [editorSectionMetadata, focusSectionById]
+  );
 
   const navigateToValidationIssue = useCallback(
     (issue) => {
@@ -1947,21 +3095,44 @@ function RepeatableEditorScreen({
       }),
     [errors, required, validationFields, values, visible]
   );
+  const entryValidationSummary = useMemo(
+    () => buildEntryValidationSummary(),
+    [buildEntryValidationSummary]
+  );
+  const showEntryValidationList = submitCount > 0 && entryValidationSummary?.hasErrors;
+  const entryNavigationIssues = useMemo(
+    () =>
+      buildNavigationIssues(
+        entryValidationSummary,
+        editorSectionMetadata,
+        editorFieldToSectionPath
+      ),
+    [editorFieldToSectionPath, editorSectionMetadata, entryValidationSummary]
+  );
+  const canOpenNavigationSheet =
+    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || showEntryValidationList;
 
   const handleSave = () => {
     if (validateBeforeSave) {
       setSubmitCount((count) => count + 1);
-      const validationSummary = buildEntryValidationSummary();
+      const validationSummary = entryValidationSummary;
       if (validationSummary.hasErrors) {
         navigateToValidationIssue(getFirstValidationIssue(validationSummary));
         return;
       }
     }
+    const savedAt = new Date().toISOString();
+    touchUpdatedAt(savedAt);
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(
+      timestampsRef.current,
+      savedAt
+    );
     const payload = {
       ...(initialInstance || {}),
       id: instanceId,
       values: cloneDeep(submit()),
       repeatable: cloneDeep(repeatable),
+      ...timestampSnapshot,
     };
     onSave(screen, payload);
   };
@@ -2010,6 +3181,9 @@ function RepeatableEditorScreen({
         leftAction={leftAction}
         rightAction={rightAction}
         showPrimaryActionsInViewMode={false}
+        onTitlePress={
+          canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined
+        }
       />
       <KeyboardFormScrollView
         ref={editorScroll.scrollRef}
@@ -2028,13 +3202,37 @@ function RepeatableEditorScreen({
           onFieldFocus: editorScroll.onFieldFocus,
           registerFieldContainer,
           registerFieldInput,
+          registerSectionContainer,
           theme,
+          onFieldChange: handleRepeatableFieldValueChange,
           activeDrilldownPath,
           sectionMetadata: editorSectionMetadata,
           onDrilldownNavigate: pushEditorDrilldownSection,
           parentSectionPath: [],
         })}
       </KeyboardFormScrollView>
+      <FormNavigationSheet
+        visible={navigationSheetVisible}
+        title={screen.field?.label || 'Entry navigation'}
+        sections={editorSectionTree}
+        issues={showEntryValidationList ? entryNavigationIssues : []}
+        validationEnabled={submitCount > 0}
+        activeSectionId={activeDrilldownSectionId}
+        onClose={() => setNavigationSheetVisible(false)}
+        onSelectSection={(sectionId) => {
+          setNavigationSheetVisible(false);
+          navigateToEditorSection(sectionId);
+        }}
+        onSelectIssue={(issue) => {
+          setNavigationSheetVisible(false);
+          navigateToValidationIssue(issue);
+        }}
+      />
+      <OperationAlertDialog
+        visible={Boolean(activeAlert)}
+        alert={activeAlert}
+        onClose={closeAlert}
+      />
       <RepeatableDiscardDialog
         visible={discardDialogVisible}
         onKeepEditing={() => setDiscardDialogVisible(false)}
@@ -2188,6 +3386,78 @@ function RepeatableRemoveDialog({ visible, entryTitle, onCancel, onConfirm }) {
               })}
             >
               <Text style={{ color: theme.color.error, fontWeight: '600' }}>Remove</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function OperationAlertDialog({ visible, alert, onClose }) {
+  const { theme } = useTheme();
+  const title =
+    typeof alert?.title === 'string' && alert.title.trim().length > 0
+      ? alert.title.trim()
+      : 'Notice';
+  const message =
+    typeof alert?.message === 'string' && alert.message.trim().length > 0
+      ? alert.message.trim()
+      : null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.35)',
+          justifyContent: 'center',
+          padding: 24,
+        }}
+        onPress={onClose}
+      >
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={{
+            backgroundColor: theme.color.background,
+            borderRadius: theme.borderRadius.lg ?? 12,
+            padding: 20,
+          }}
+        >
+          <View style={{ marginBottom: 16 }}>
+            <Text
+              style={{
+                color: theme.color.foreground,
+                fontWeight: theme.fontWeight.bold,
+                fontSize: theme.fontSize.lg,
+                marginBottom: message ? 8 : 0,
+              }}
+            >
+              {title}
+            </Text>
+            {message ? (
+              <Text style={{ color: theme.color.description }}>
+                {message}
+              </Text>
+            ) : null}
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => ({
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                backgroundColor: pressed ? theme.color.buttonHoverBg : theme.color.buttonBg,
+              })}
+            >
+              <Text style={{ color: theme.color.buttonFg, fontWeight: '600' }}>OK</Text>
             </Pressable>
           </View>
         </Pressable>

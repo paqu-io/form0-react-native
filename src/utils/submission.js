@@ -5,18 +5,38 @@ export const DEFAULT_FIELD_KEY_MODE = 'prefer-key';
 
 const toNullableString = (value) => (value === null || typeof value === 'string' ? value : null);
 
-export function buildSubmissionTimestampSnapshot(rawValues = {}, updatedAtClientOverride = null) {
-  const source = rawValues && typeof rawValues === 'object' ? rawValues : {};
+const getTimestampSourceValue = (source, key) => {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, key)) {
+    return source[key];
+  }
+
+  if (key === 'created_at_client' && Object.prototype.hasOwnProperty.call(source, 'created_at')) {
+    return source.created_at;
+  }
+
+  if (key === 'updated_at_client' && Object.prototype.hasOwnProperty.call(source, 'updated_at')) {
+    return source.updated_at;
+  }
+
+  return undefined;
+};
+
+export function buildSubmissionTimestampSnapshot(sourceValues = {}, updatedAtClientOverride = null) {
+  const source = sourceValues && typeof sourceValues === 'object' ? sourceValues : {};
   const now = updatedAtClientOverride ?? new Date().toISOString();
 
   return {
-    created_at_client:
-      toNullableString(source.created_at_client) ??
-      toNullableString(source.created_at) ??
+    created_at_client: toNullableString(getTimestampSourceValue(source, 'created_at_client')) ?? now,
+    updated_at_client:
+      updatedAtClientOverride ??
+      toNullableString(getTimestampSourceValue(source, 'updated_at_client')) ??
       now,
-    updated_at_client: now,
-    created_at_server: toNullableString(source.created_at_server),
-    updated_at_server: toNullableString(source.updated_at_server),
+    created_at_server: toNullableString(getTimestampSourceValue(source, 'created_at_server')),
+    updated_at_server: toNullableString(getTimestampSourceValue(source, 'updated_at_server')),
   };
 }
 
@@ -51,13 +71,16 @@ export function buildStructuredSubmission({
   values,
   repeatable,
   fieldKeyMode = DEFAULT_FIELD_KEY_MODE,
+  timestamps: explicitTimestamps = null,
 }) {
   const statusField = schema?.form?.status_field || null;
   const statusFieldName = statusField?.data_name || null;
   const statusValue = statusFieldName
     ? values?.[statusFieldName] ?? statusField?.default_value ?? null
     : null;
-  const timestamps = buildSubmissionTimestampSnapshot(values);
+  const timestamps = explicitTimestamps
+    ? buildSubmissionTimestampSnapshot(explicitTimestamps)
+    : buildSubmissionTimestampSnapshot(values);
   const rawValues = buildSubmissionRawValues({
     values,
     timestampSnapshot: timestamps,

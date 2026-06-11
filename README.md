@@ -13,6 +13,11 @@
 
 form0-react-native is the React Native UI layer of the [form0 ecosystem](https://form0.dev), wrapping the form0-core engine with React Native bindings and a lightweight set of default field renderers. It provides minimal, platform-native components that work on iOS and Android, allowing apps to layer their own design systems on top without rewriting engine integration code.
 
+## Parity tracker
+
+The current parity roadmap and status live in [FORM0_REACT_PARITY.md](./FORM0_REACT_PARITY.md).
+Keep that file up to date whenever parity work lands.
+
 ## Renderer overrides
 
 `FormRenderer` accepts a `renderers` prop so apps can replace or extend field components without forking the package.
@@ -29,6 +34,20 @@ const renderers = {
 ```
 
 This is the preferred integration point for app-specific media capture, upload flows, and branding.
+
+`PhotoField` and `VideoField` are still intentionally override-driven. The package registers
+placeholder-backed defaults so schemas stay renderable, but production apps should provide their
+own renderers for those field types. `SignatureField` now has a built-in native renderer, and a
+consumer renderer can still override it the same way.
+
+## Navigation panel
+
+`FormRenderer` now includes a package-owned mobile navigation and validation sheet. On supported
+form screens, users can tap the existing header title to open it. The sheet shows section
+navigation and validation issues without adding extra header buttons.
+
+Use `forceShowNavigationPanel={true}` to keep the title-tap affordance available even when the
+current screen has no visible sections or validation issues yet.
 
 ## Repeatable sections
 

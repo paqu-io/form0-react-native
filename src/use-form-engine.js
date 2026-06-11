@@ -44,11 +44,14 @@ function prepareSchema(schema) {
   return copy;
 }
 
-export function useFormEngine(schema, initialValues = {}, overrideValues) {
+export function useFormEngine(schema, initialValues = {}, overrideValues, options = {}) {
   const [state, setState] = useState(createEmptyState);
+  const [engineReadyVersion, setEngineReadyVersion] = useState(0);
   const engineRef = useRef(null);
   const initialValuesRef = useRef(initialValues || {});
   const overrideValuesRef = useRef(overrideValues || null);
+  const optionsRef = useRef(options || {});
+  const warningCleanupRef = useRef(null);
   const initialValuesSignature = useMemo(
     () => JSON.stringify(initialValues || {}),
     [initialValues]
@@ -67,6 +70,10 @@ export function useFormEngine(schema, initialValues = {}, overrideValues) {
   useEffect(() => {
     overrideValuesRef.current = overrideValues || null;
   }, [overrideValues]);
+
+  useEffect(() => {
+    optionsRef.current = options || {};
+  }, [options]);
 
   const syncState = useCallback(() => {
     const engine = engineRef.current;
@@ -94,10 +101,13 @@ export function useFormEngine(schema, initialValues = {}, overrideValues) {
       const engine = createFormEngine({
         schema: preparedSchema,
         initialValues: { ...(seedValues || {}) },
+        helpers: optionsRef.current.helpers,
+        security: optionsRef.current.security,
       });
       engine.eval();
       engineRef.current = engine;
       syncState();
+      setEngineReadyVersion((version) => version + 1);
     },
     [preparedSchema, syncState]
   );
@@ -105,16 +115,6 @@ export function useFormEngine(schema, initialValues = {}, overrideValues) {
   useEffect(() => {
     rebuildEngine(initialValuesRef.current);
   }, [rebuildEngine, initialValuesSignature]);
-
-  useEffect(() => {
-    if (!engineRef.current || !overrideValuesRef.current) return;
-    const updates = overrideValuesRef.current;
-    Object.entries(updates).forEach(([field, value]) => {
-      engineRef.current.getState().values[field] = value;
-    });
-    engineRef.current.eval();
-    syncState();
-  }, [overrideSignature, syncState]);
 
   const setValues = useCallback(
     (updates = {}) => {
@@ -136,6 +136,94 @@ export function useFormEngine(schema, initialValues = {}, overrideValues) {
     [syncState]
   );
 
+  const defaultProcessOperations = useCallback(
+    (operations = []) => {
+      if (!Array.isArray(operations) || operations.length === 0) {
+        return;
+      }
+
+      const pendingValueUpdates = {};
+
+      operations.forEach((operation) => {
+        if (!operation || typeof operation !== 'object') {
+          return;
+        }
+
+        const { type, operation: operationName, params = {} } = operation;
+        if (type === 'FIELD_OPERATION' && operationName === 'SETVALUE') {
+          const { fieldDataName, valueToSet } = params || {};
+          if (typeof fieldDataName !== 'string' || fieldDataName.length === 0) {
+            console.warn('form0-react-native: SETVALUE operation missing fieldDataName.', operation);
+            return;
+          }
+          pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
+          return;
+        }
+
+        if (type === 'UI_OPERATION' || type === 'FIELD_OPERATION') {
+          console.warn(
+            'form0-react-native: unhandled operation received. Provide engineOptions.onOperations to customize it.',
+            operation
+          );
+        }
+      });
+
+      if (Object.keys(pendingValueUpdates).length > 0) {
+        setValues(pendingValueUpdates);
+      }
+    },
+    [setValues]
+  );
+
+  const processOperations = useCallback(
+    (operations = [], meta = {}) => {
+      if (!Array.isArray(operations) || operations.length === 0) {
+        return;
+      }
+
+      const handler = optionsRef.current.onOperations;
+      if (typeof handler === 'function') {
+        handler(operations, meta, defaultProcessOperations);
+        return;
+      }
+
+      defaultProcessOperations(operations, meta);
+    },
+    [defaultProcessOperations]
+  );
+
+  const triggerEvent = useCallback(
+    (eventType, fieldKey = null, metadata = {}) => {
+      if (typeof eventType !== 'string' || eventType.length === 0) {
+        console.warn('form0-react-native: triggerEvent requires a non-empty eventType string.');
+        return [];
+      }
+
+      if (!engineRef.current) {
+        return [];
+      }
+
+      try {
+        const operations = engineRef.current.trigger(eventType, fieldKey, metadata) || [];
+        if (operations.length > 0) {
+          processOperations(operations, { eventType, fieldKey, metadata });
+        }
+        return operations;
+      } catch (error) {
+        console.warn('form0-react-native: triggerEvent failed.', error);
+        return [];
+      }
+    },
+    [processOperations]
+  );
+
+  useEffect(() => {
+    if (!overrideValuesRef.current || !engineRef.current) {
+      return;
+    }
+    setValues(overrideValuesRef.current);
+  }, [overrideSignature, setValues]);
+
   const setValue = useCallback(
     (field, value) => {
       if (!field) return;
@@ -156,13 +244,68 @@ export function useFormEngine(schema, initialValues = {}, overrideValues) {
     return engine?.getState()?.values ? cloneDeep(engine.getState().values) : {};
   }, []);
 
+  useEffect(() => {
+    const handler = optionsRef.current.onUpdate;
+    if (typeof handler === 'function' && engineRef.current) {
+      handler({ ...state }, engineRef.current);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (warningCleanupRef.current) {
+      warningCleanupRef.current();
+      warningCleanupRef.current = null;
+    }
+
+    const warningHandler = optionsRef.current.onWarning;
+    if (typeof warningHandler !== 'function') {
+      return;
+    }
+
+    const warningSystem = engineRef.current?.getWarningSystem?.();
+    if (!warningSystem || typeof warningSystem.addWarningHandler !== 'function') {
+      return;
+    }
+
+    const proxy = (warning) => {
+      const latest = optionsRef.current.onWarning;
+      if (typeof latest === 'function') {
+        latest(warning);
+      }
+    };
+
+    warningSystem.addWarningHandler(proxy);
+    warningCleanupRef.current = () => warningSystem.removeWarningHandler(proxy);
+
+    return () => {
+      if (warningCleanupRef.current) {
+        warningCleanupRef.current();
+        warningCleanupRef.current = null;
+      } else {
+        warningSystem.removeWarningHandler(proxy);
+      }
+    };
+  }, [engineReadyVersion, options?.onWarning]);
+
+  useEffect(() => {
+    return () => {
+      if (warningCleanupRef.current) {
+        warningCleanupRef.current();
+        warningCleanupRef.current = null;
+      }
+    };
+  }, []);
+
   return {
     ...state,
     setValue,
     setValues,
     reset,
     submit,
+    triggerEvent,
+    processOperations,
     schema: preparedSchema,
     engine: engineRef.current,
+    engineReadyVersion,
   };
 }

@@ -110,3 +110,29 @@ test('structured submission returns web-aligned meta and preserves media identif
     'Nested value',
   );
 });
+
+test('structured submission honors explicit timestamp snapshots', () => {
+  const submission = buildStructuredSubmission({
+    schema: submissionSchema,
+    values: {
+      text_field: 'Pinned timestamp',
+    },
+    repeatable: {},
+    fieldKeyMode: 'data-name',
+    timestamps: {
+      created_at_client: '2026-06-10T08:00:00.000Z',
+      updated_at_client: '2026-06-10T08:15:00.000Z',
+      created_at_server: '2026-06-10T08:30:00.000Z',
+      updated_at_server: '2026-06-10T08:45:00.000Z',
+    },
+  });
+
+  assert.equal(submission.timestamps.created_at_client, '2026-06-10T08:00:00.000Z');
+  assert.equal(submission.timestamps.updated_at_client, '2026-06-10T08:15:00.000Z');
+  assert.equal(submission.timestamps.created_at_server, '2026-06-10T08:30:00.000Z');
+  assert.equal(submission.timestamps.updated_at_server, '2026-06-10T08:45:00.000Z');
+  assert.equal(submission.rawValues.created_at_client, '2026-06-10T08:00:00.000Z');
+  assert.equal(submission.rawValues.updated_at_client, '2026-06-10T08:15:00.000Z');
+  assert.equal(submission.rawValues.created_at_server, '2026-06-10T08:30:00.000Z');
+  assert.equal(submission.rawValues.updated_at_server, '2026-06-10T08:45:00.000Z');
+});
