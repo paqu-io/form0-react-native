@@ -204,6 +204,63 @@ const KeyboardFormScrollView = React.forwardRef(function KeyboardFormScrollView(
   );
 });
 
+function isActiveNormalDrilldownSection(sectionInfo) {
+  return (
+    sectionInfo?.type === 'Section' &&
+    sectionInfo?.display === 'drilldown' &&
+    sectionInfo?.field
+  );
+}
+
+function renderActiveDrilldownSectionBody({
+  sectionInfo,
+  renderElements,
+  renderOptions,
+  registerSectionContainer,
+  theme,
+}) {
+  if (!isActiveNormalDrilldownSection(sectionInfo)) {
+    return null;
+  }
+
+  const field = sectionInfo.field;
+  const sectionId = sectionInfo.id || field.data_name || field.key;
+  const sectionPath = Array.isArray(sectionInfo.path) ? sectionInfo.path : [];
+  const description = field.description || null;
+
+  return (
+    <View
+      key={sectionId || 'active-drilldown-section'}
+      ref={
+        sectionId && typeof registerSectionContainer === 'function'
+          ? (node) => registerSectionContainer(sectionId, node)
+          : undefined
+      }
+      style={{
+        flexGrow: 1,
+        width: '100%',
+        alignSelf: 'stretch',
+      }}
+    >
+      {description ? (
+        <Text
+          style={{
+            color: theme.color.description,
+            fontSize: theme.fontSize.sm,
+            marginBottom: theme.spacing.md,
+          }}
+        >
+          {description}
+        </Text>
+      ) : null}
+      {renderElements(field.elements || [], {
+        ...renderOptions,
+        parentSectionPath: sectionPath,
+      })}
+    </View>
+  );
+}
+
 function useKeyboardAwareScroll({ scrollOffset = DEFAULT_SCROLL_OFFSET } = {}) {
   const scrollRef = useRef(null);
   const scrollYRef = useRef(0);
@@ -2082,35 +2139,47 @@ export function FormRenderer({
   const formName = finalSchema?.form?.name || null;
 
   // Render the main form content (with themed background)
-  const renderMainFormContent = (theme) => (
-    <KeyboardFormScrollView
-      ref={mainScroll.scrollRef}
-      onScroll={mainScroll.onScroll}
-      onLayout={mainScroll.onLayout}
-      contentContainerStyle={{ padding: 16 }}
-      style={{ backgroundColor: theme.color.background }}
-    >
-      {renderElements(elements, {
-        state: { values, visible, required, read_only, errors },
-        setValue,
-        readOnly: isReadOnly,
-        submitCount,
-        controller: formRepeatableController,
-        parentPath: [],
-        onFieldFocus: mainScroll.onFieldFocus,
-        registerFieldContainer: registerRootFieldContainer,
-        registerFieldInput: registerRootFieldInput,
-        registerSectionContainer: registerRootSectionContainer,
-        theme,
-        onFieldChange: handleRootFieldValueChange,
-        // Drilldown state for section rendering
-        activeDrilldownPath,
-        sectionMetadata,
-        onDrilldownNavigate: pushDrilldownSection,
-        parentSectionPath: [],
-      })}
-    </KeyboardFormScrollView>
-  );
+  const renderMainFormContent = (theme) => {
+    const renderOptions = {
+      state: { values, visible, required, read_only, errors },
+      setValue,
+      readOnly: isReadOnly,
+      submitCount,
+      controller: formRepeatableController,
+      parentPath: [],
+      onFieldFocus: mainScroll.onFieldFocus,
+      registerFieldContainer: registerRootFieldContainer,
+      registerFieldInput: registerRootFieldInput,
+      registerSectionContainer: registerRootSectionContainer,
+      theme,
+      onFieldChange: handleRootFieldValueChange,
+      // Drilldown state for section rendering
+      activeDrilldownPath,
+      sectionMetadata,
+      onDrilldownNavigate: pushDrilldownSection,
+      parentSectionPath: [],
+    };
+
+    const activeSectionBody = renderActiveDrilldownSectionBody({
+      sectionInfo: activeDrilldownSectionInfo,
+      renderElements,
+      renderOptions,
+      registerSectionContainer: registerRootSectionContainer,
+      theme,
+    });
+
+    return (
+      <KeyboardFormScrollView
+        ref={mainScroll.scrollRef}
+        onScroll={mainScroll.onScroll}
+        onLayout={mainScroll.onLayout}
+        contentContainerStyle={{ padding: 16 }}
+        style={{ backgroundColor: theme.color.background }}
+      >
+        {activeSectionBody || renderElements(elements, renderOptions)}
+      </KeyboardFormScrollView>
+    );
+  };
 
   const renderRepeatableScreens = (theme) => (
     <View style={{ flex: 1 }}>
@@ -3275,6 +3344,31 @@ function RepeatableEditorScreen({
         }
       : null;
   const headerTitle = activeDrilldownSectionInfo?.label || screen.field?.label || 'Entry';
+  const renderOptions = {
+    state: { values, visible, required, read_only, errors },
+    setValue,
+    readOnly,
+    submitCount,
+    controller,
+    parentPath: nestedRepeatableParentPath,
+    onFieldFocus: editorScroll.onFieldFocus,
+    registerFieldContainer,
+    registerFieldInput,
+    registerSectionContainer,
+    theme,
+    onFieldChange: handleRepeatableFieldValueChange,
+    activeDrilldownPath,
+    sectionMetadata: editorSectionMetadata,
+    onDrilldownNavigate: pushEditorDrilldownSection,
+    parentSectionPath: [],
+  };
+  const activeSectionBody = renderActiveDrilldownSectionBody({
+    sectionInfo: activeDrilldownSectionInfo,
+    renderElements,
+    renderOptions,
+    registerSectionContainer,
+    theme,
+  });
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.background }}>
@@ -3295,24 +3389,8 @@ function RepeatableEditorScreen({
         contentContainerStyle={{ padding: 16 }}
         style={{ backgroundColor: theme.color.background }}
       >
-        {renderElements(screen.repInfo?.field?.elements || [], {
-          state: { values, visible, required, read_only, errors },
-          setValue,
-          readOnly,
-          submitCount,
-          controller,
-          parentPath: nestedRepeatableParentPath,
-          onFieldFocus: editorScroll.onFieldFocus,
-          registerFieldContainer,
-          registerFieldInput,
-          registerSectionContainer,
-          theme,
-          onFieldChange: handleRepeatableFieldValueChange,
-          activeDrilldownPath,
-          sectionMetadata: editorSectionMetadata,
-          onDrilldownNavigate: pushEditorDrilldownSection,
-          parentSectionPath: [],
-        })}
+        {activeSectionBody ||
+          renderElements(screen.repInfo?.field?.elements || [], renderOptions)}
       </KeyboardFormScrollView>
       <FormNavigationSheet
         visible={navigationSheetVisible}
