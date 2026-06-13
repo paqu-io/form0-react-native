@@ -157,6 +157,12 @@ test('form renderer exposes parity-facing snapshot and engine APIs', () => {
     /function FormNavigationSheet\(/,
     'FormRenderer should own a native navigation and validation sheet',
   );
+
+  assert.match(
+    formRendererSource,
+    /if \(!Array\.isArray\(pathA\) \|\| pathA\.length === 0\)/,
+    'Native drilldown path prefix checks should ignore empty candidate paths for parity with web',
+  );
 });
 
 test('repeatable screens keep a mounted stack and save through the controller contract', () => {
@@ -306,6 +312,12 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
     formRendererSource,
     /navigateToRootValidationIssue\(getFirstValidationIssue\(validationSummary\)\);/,
     'Root form should navigate to the first invalid field on submit failure',
+  );
+
+  assert.match(
+    formRendererSource,
+    /const isWithinActiveFieldBranch =/,
+    'Root drilldown rendering should only keep field content that belongs to the active branch',
   );
 
   assert.match(
