@@ -18,6 +18,7 @@ land without a tracker edit.
 | Repeatable editor freezing | Implemented | `initialInstance` and `parentValues` are frozen when opening repeatable editors, including nested editor flows. |
 | Navigation / validation panel | Implemented | Mobile now exposes a package-owned title-tap sheet for section navigation and validation issues on root and repeatable editor screens. |
 | SignatureField | Implemented | Native ships a package-agnostic built-in renderer that preserves the `form0-core` output contract. |
+| Drilldown Section rendering | Implemented | Normal native `Section` drilldowns now render through a clean active section body path while preserving existing `RepeatableSection` list/editor flows. |
 | PhotoField strategy | Implemented | The package still defaults to override-driven integration. The built-in registration remains intentionally placeholder-backed. |
 | VideoField strategy | Implemented | The package still defaults to override-driven integration. The built-in registration remains intentionally placeholder-backed. |
 | Types | Implemented | `form0-react-native` now ships first-party `.d.ts` declarations. |
@@ -66,3 +67,6 @@ Status vocabulary:
   snapshots and timestamps, frozen repeatable editor seeds, a package-owned title-tap navigation
   and validation panel, built-in `SignatureField`, first-party types, and consumer adoption of the
   new snapshot contract in reform mobile and the Expo template.
+- 2026-06-13 - `Unreleased`: routed normal native drilldown `Section` pages through a clean active
+  section body path for root forms and repeatable editors while preserving existing
+  `RepeatableSection` list/editor behavior.
