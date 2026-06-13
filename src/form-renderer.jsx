@@ -148,7 +148,10 @@ function buildSectionHierarchy(elements = [], resolveRepeatableKey) {
  * Used for determining if a section is on the active drilldown path.
  */
 function isPathPrefix(pathA, pathB) {
-  if (!Array.isArray(pathA) || !Array.isArray(pathB)) {
+  if (!Array.isArray(pathA) || pathA.length === 0) {
+    return false;
+  }
+  if (!Array.isArray(pathB)) {
     return false;
   }
   if (pathA.length > pathB.length) {
@@ -1423,8 +1426,10 @@ export function FormRenderer({
       };
       const sectionHeaderBandStyle = {
         backgroundColor: t.color.section,
-        paddingVertical: t.spacing.sm,
+        paddingVertical: 12,
         paddingHorizontal: t.spacing.md,
+        minHeight: 44,
+        justifyContent: 'center',
         borderBottomWidth: 1,
         borderBottomColor: sectionBorderColor,
       };
@@ -1437,6 +1442,9 @@ export function FormRenderer({
         if (!field) return null;
 
         if (activeDrilldownSectionId) {
+          const isWithinActiveFieldBranch =
+            parentSectionPath.includes(activeDrilldownSectionId) ||
+            isPathPrefix(activeDrilldownFullPath, parentSectionPath);
           if (SECTION_LIKE_TYPES.has(field.type)) {
             const sectionId = field.data_name || field.key;
             if (!sectionId) {
@@ -1476,7 +1484,7 @@ export function FormRenderer({
                 </React.Fragment>
               );
             }
-          } else if (!parentSectionPath.includes(activeDrilldownSectionId)) {
+          } else if (!isWithinActiveFieldBranch) {
             return null;
           }
         }
