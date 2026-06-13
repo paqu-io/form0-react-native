@@ -163,6 +163,18 @@ test('form renderer exposes parity-facing snapshot and engine APIs', () => {
     /if \(!Array\.isArray\(pathA\) \|\| pathA\.length === 0\)/,
     'Native drilldown path prefix checks should ignore empty candidate paths for parity with web',
   );
+
+  assert.match(
+    formRendererSource,
+    /alignItems:\s*'stretch'/,
+    'Native form scroll containers should stretch drilldown content to the full available width',
+  );
+
+  assert.match(
+    formRendererSource,
+    /width:\s*'100%'/,
+    'Native drilldown section cards should explicitly occupy the full available width',
+  );
 });
 
 test('repeatable screens keep a mounted stack and save through the controller contract', () => {

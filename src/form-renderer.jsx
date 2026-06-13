@@ -175,7 +175,15 @@ const FormScrollView = React.forwardRef(function FormScrollView(
       onLayout={onLayout}
       scrollEventThrottle={16}
       style={style}
-      contentContainerStyle={[{ padding: 16, paddingBottom: 32 }, contentContainerStyle]}
+      contentContainerStyle={[
+        {
+          padding: 16,
+          paddingBottom: 32,
+          flexGrow: 1,
+          alignItems: 'stretch',
+        },
+        contentContainerStyle,
+      ]}
       {...props}
     >
       {children}
@@ -1423,6 +1431,8 @@ export function FormRenderer({
         backgroundColor: t.color.background,
         marginBottom: t.spacing.lg,
         overflow: 'hidden',
+        width: '100%',
+        alignSelf: 'stretch',
       };
       const sectionHeaderBandStyle = {
         backgroundColor: t.color.section,
@@ -1436,6 +1446,8 @@ export function FormRenderer({
       const sectionBodyStyle = {
         paddingVertical: t.spacing.sm,
         paddingHorizontal: t.spacing.md,
+        width: '100%',
+        minWidth: 0,
       };
 
       return items.map((field) => {
