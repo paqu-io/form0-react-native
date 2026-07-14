@@ -42,7 +42,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "form0-core": "^0.1.22"
+    "form0-core": "^0.1.23"
   },
   "devDependencies": {
     "ignore": "^7.0.5"

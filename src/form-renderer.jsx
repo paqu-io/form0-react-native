@@ -64,7 +64,7 @@ const DEFAULT_SCROLL_OFFSET = 24;
  * @param {Function} resolveRepeatableKey - Optional function to resolve repeatable keys
  * @returns {{ sectionTree: Array, sectionMetadata: Object, fieldToSectionPath: Object }}
  */
-function buildSectionHierarchy(elements = [], resolveRepeatableKey) {
+function buildSectionHierarchy(elements = [], resolveRepeatableKey, isVisible = () => true) {
   const metadata = {};
   const fieldPathMap = {};
 
@@ -77,6 +77,9 @@ function buildSectionHierarchy(elements = [], resolveRepeatableKey) {
 
     nodes.forEach((el) => {
       if (!el) {
+        return;
+      }
+      if (!isVisible(el)) {
         return;
       }
 
@@ -874,12 +877,27 @@ export function FormRenderer({
 
   // Build section hierarchy for drilldown navigation
   const { sectionTree, sectionMetadata, fieldToSectionPath } = useMemo(
-    () => buildSectionHierarchy(elements, resolveRepeatableKey),
-    [elements, resolveRepeatableKey]
+    () =>
+      buildSectionHierarchy(elements, resolveRepeatableKey, (field) => {
+        if (!field?.data_name) return field?.visible !== false;
+        return Object.prototype.hasOwnProperty.call(visible || {}, field.data_name)
+          ? visible[field.data_name] !== false
+          : field.visible !== false;
+      }),
+    [elements, resolveRepeatableKey, visible]
   );
 
   // Drilldown navigation state
   const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
+
+  useEffect(() => {
+    if (
+      activeDrilldownPath.length > 0 &&
+      activeDrilldownPath.some((sectionId) => !sectionMetadata[sectionId])
+    ) {
+      setActiveDrilldownPath([]);
+    }
+  }, [activeDrilldownPath, sectionMetadata]);
 
   useEffect(() => {
     const nextInitialValues = cloneDeep(rendererInitialValues || {});
@@ -1509,6 +1527,13 @@ export function FormRenderer({
 
       return items.map((field) => {
         if (!field) return null;
+        const visibilityKey = field.data_name;
+        const fieldVisible = visibilityKey
+          ? Object.prototype.hasOwnProperty.call(state?.visible || {}, visibilityKey)
+            ? state.visible[visibilityKey] !== false
+            : field.visible !== false
+          : field.visible !== false;
+        if (!fieldVisible) return null;
 
         if (activeDrilldownSectionId) {
           const isWithinActiveFieldBranch =
@@ -3028,8 +3053,18 @@ function RepeatableEditorScreen({
     sectionMetadata: editorSectionMetadata,
     fieldToSectionPath: editorFieldToSectionPath,
   } = useMemo(
-    () => buildSectionHierarchy(screen.repInfo?.field?.elements || [], resolveNestedRepeatableKey),
-    [resolveNestedRepeatableKey, screen.repInfo?.field?.elements]
+    () =>
+      buildSectionHierarchy(
+        screen.repInfo?.field?.elements || [],
+        resolveNestedRepeatableKey,
+        (field) => {
+          if (!field?.data_name) return field?.visible !== false;
+          return Object.prototype.hasOwnProperty.call(visible || {}, field.data_name)
+            ? visible[field.data_name] !== false
+            : field.visible !== false;
+        }
+      ),
+    [resolveNestedRepeatableKey, screen.repInfo?.field?.elements, visible]
   );
   const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
   const [navigationSheetVisible, setNavigationSheetVisible] = useState(false);
@@ -3038,6 +3073,14 @@ function RepeatableEditorScreen({
   const activeDrilldownSectionInfo = activeDrilldownSectionId
     ? editorSectionMetadata[activeDrilldownSectionId]
     : null;
+  useEffect(() => {
+    if (
+      activeDrilldownPath.length > 0 &&
+      activeDrilldownPath.some((sectionId) => !editorSectionMetadata[sectionId])
+    ) {
+      setActiveDrilldownPath([]);
+    }
+  }, [activeDrilldownPath, editorSectionMetadata]);
   const validationFields = useMemo(
     () =>
       collectValidatableFields(screen.repInfo?.field?.elements || [], {

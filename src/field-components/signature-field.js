@@ -7,7 +7,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import Svg, { Path, SvgXml } from 'react-native-svg';
+import Svg, { Path, Rect, SvgXml } from 'react-native-svg';
 import { generateUuidV7 } from 'form0-core';
 import { FormHeader } from '../form-header.jsx';
 import { useTheme } from '../theme-context.jsx';
@@ -17,6 +17,8 @@ const DEFAULT_CANVAS_WIDTH = 320;
 const DEFAULT_CANVAS_HEIGHT = 160;
 const DEFAULT_MODAL_CANVAS_HEIGHT = 240;
 const SIGNATURE_STROKE_WIDTH = 2.5;
+const SIGNATURE_EXPORT_STROKE = '#222';
+const SIGNATURE_EXPORT_BACKGROUND = '#fff';
 const SIGNATURE_EXPORT_PADDING = 18;
 const SIGNATURE_MIN_EXPORT_WIDTH = 120;
 const SIGNATURE_MIN_EXPORT_HEIGHT = 72;
@@ -661,13 +663,13 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
               <View
                 {...(!isReadOnly ? panResponder.panHandlers : {})}
                 onLayout={(event) => {
-                  const { width, height } = event.nativeEvent.layout || {};
-                  if (width > 0 && height > 0) {
-                    setDraftLayout({ width, height });
+                  const { width } = event.nativeEvent.layout || {};
+                  if (width > 0) {
+                    setDraftLayout({ width, height: signingCanvasHeight });
                   }
                 }}
                 style={{
-                  minHeight: signingCanvasHeight,
+                  height: signingCanvasHeight,
                   justifyContent: 'center',
                 }}
                 accessibilityLabel={field?.label || 'Signature capture'}
@@ -678,7 +680,7 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
                     style={{
                       alignItems: 'center',
                       justifyContent: 'center',
-                      minHeight: signingCanvasHeight,
+                      height: signingCanvasHeight,
                       paddingHorizontal: 16,
                     }}
                   >
@@ -744,12 +746,19 @@ export function SignatureFieldComponent({ field, value, onChange, readOnly, inpu
                 height={exportSpec.height}
                 viewBox={`${exportSpec.x} ${exportSpec.y} ${exportSpec.width} ${exportSpec.height}`}
               >
+                <Rect
+                  x={exportSpec.x}
+                  y={exportSpec.y}
+                  width={exportSpec.width}
+                  height={exportSpec.height}
+                  fill={SIGNATURE_EXPORT_BACKGROUND}
+                />
                 {draftStrokes.map((stroke, index) => (
                   <Path
                     key={`export-stroke-${index}`}
                     d={stroke.d}
                     fill="none"
-                    stroke={canvasForeground}
+                    stroke={SIGNATURE_EXPORT_STROKE}
                     strokeWidth={SIGNATURE_STROKE_WIDTH}
                     strokeLinecap="round"
                     strokeLinejoin="round"
