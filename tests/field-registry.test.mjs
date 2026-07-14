@@ -177,6 +177,24 @@ test('form renderer exposes parity-facing snapshot and engine APIs', () => {
   );
 });
 
+test('hidden sections stay out of native navigation and rendering', () => {
+  assert.match(
+    formRendererSource,
+    /buildSectionHierarchy\(elements = \[\], resolveRepeatableKey, isVisible = \(\) => true\)/,
+    'Section hierarchy should accept engine-resolved visibility',
+  );
+  assert.match(
+    formRendererSource,
+    /if \(!isVisible\(el\)\) \{\s*return;/,
+    'Hidden inline, drilldown, and repeatable sections should stay out of navigation',
+  );
+  assert.match(
+    formRendererSource,
+    /if \(!fieldVisible\) return null;/,
+    'Hidden section-like fields should be removed before their renderer branch',
+  );
+});
+
 test('repeatable screens keep a mounted stack and save through the controller contract', () => {
   assert.match(
     formRendererSource,
