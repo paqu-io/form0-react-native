@@ -685,6 +685,7 @@ export function FormRenderer({
   initialSnapshot,
   overrideValues,
   onSubmit,
+  onSave,
   onSnapshotChange,
   forceShowNavigationPanel = false,
   fieldKeyMode = DEFAULT_FIELD_KEY_MODE,
@@ -701,6 +702,7 @@ export function FormRenderer({
   showHeader = true,
   primaryActionMode = 'submit',
   primaryActionLabel,
+  headerAccessory,
   colorMode = 'light',
   customTheme = null,
   imageResolver = null,
@@ -1964,7 +1966,13 @@ export function FormRenderer({
   );
 
   const canSubmit = !isReadOnly && typeof onSubmit === 'function';
+  const canSave = !isReadOnly && typeof onSave === 'function';
   const hasSubmitHandler = typeof onSubmit === 'function';
+  const hasSaveHandler = typeof onSave === 'function';
+  const useSaveAction =
+    primaryActionMode === 'save' && typeof onSave === 'function';
+  const canPrimaryAction = useSaveAction ? canSave : canSubmit;
+  const hasPrimaryAction = useSaveAction ? hasSaveHandler : hasSubmitHandler;
   const activeRepeatableScreen = repeatableStack[repeatableStack.length - 1] || null;
   const resolvedPrimaryActionLabel =
     typeof primaryActionLabel === 'string' && primaryActionLabel.trim().length > 0
@@ -2040,6 +2048,45 @@ export function FormRenderer({
     timestampsRef,
     touchUpdatedAt,
   ]);
+
+  const handleFormSave = useCallback(() => {
+    if (!onSave) {
+      return;
+    }
+
+    setSubmitCount((count) => count + 1);
+    const savedAt = new Date().toISOString();
+    touchUpdatedAt(savedAt);
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(
+      timestampsRef.current,
+      savedAt
+    );
+    const nextSnapshot = {
+      raw_values: buildSubmissionRawValues({
+        values: valuesRef.current,
+        timestampSnapshot,
+        statusFieldName,
+        statusValue,
+      }),
+      repeatable: cloneDeep(repeatableStateRef.current),
+      timestamps: timestampSnapshot,
+    };
+
+    onSave(nextSnapshot, {
+      validationSummary: rootValidationSummary,
+      dirty: hasChanges,
+    });
+  }, [
+    hasChanges,
+    onSave,
+    rootValidationSummary,
+    statusFieldName,
+    statusValue,
+    timestampsRef,
+    touchUpdatedAt,
+  ]);
+
+  const handlePrimaryAction = useSaveAction ? handleFormSave : handleFormSubmit;
 
   const getRepeatableEntryTitle = (field, instance, index) => {
     const titleFieldDataName = field?.title_field?.data_name;
@@ -2284,11 +2331,12 @@ export function FormRenderer({
             formName={formName}
             interactionMode={interactionMode}
             requestCancel={typeof onRequestClose === 'function' ? requestCancel : undefined}
-            handleFormSubmit={hasSubmitHandler ? handleFormSubmit : undefined}
+            handlePrimaryAction={hasPrimaryAction ? handlePrimaryAction : undefined}
             enterEditMode={enterEditMode}
-            canSubmit={canSubmit}
+            canPrimaryAction={canPrimaryAction}
             primaryActionMode={primaryActionMode}
             primaryActionLabel={resolvedPrimaryActionLabel}
+            headerAccessory={headerAccessory}
             showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
             canOpenNavigationSheet={rootNavigationPanelAvailable}
             navigationSections={sectionTree}
@@ -2327,11 +2375,12 @@ function FormRendererInner({
   formName,
   interactionMode,
   requestCancel,
-  handleFormSubmit,
+  handlePrimaryAction,
   enterEditMode,
-  canSubmit,
+  canPrimaryAction,
   primaryActionMode,
   primaryActionLabel,
+  headerAccessory,
   showPrimaryActionsInViewMode,
   canOpenNavigationSheet,
   navigationSections,
@@ -2398,35 +2447,35 @@ function FormRendererInner({
     }
 
     // Right action: Submit or Save based on context (edit mode only)
-    if (isRootPage && typeof handleFormSubmit === 'function') {
+    if (isRootPage && typeof handlePrimaryAction === 'function') {
       rightAction = {
         id: primaryActionMode === 'save' ? 'save' : 'submit',
         label: primaryActionLabel,
         variant: 'primary',
-        onPress: handleFormSubmit,
-        disabled: !canSubmit,
+        onPress: handlePrimaryAction,
+        disabled: !canPrimaryAction,
       };
     } else if (
       isFirstSpecialPage &&
       !isRepeatableFirstPage &&
-      typeof handleFormSubmit === 'function'
+      typeof handlePrimaryAction === 'function'
     ) {
       // Drilldown section (non-repeatable): show Save
       rightAction = {
         id: 'save-section',
         label: 'Save',
         variant: 'primary',
-        onPress: handleFormSubmit,
-        disabled: !canSubmit,
+        onPress: handlePrimaryAction,
+        disabled: !canPrimaryAction,
       };
     }
     // Note: Add button for repeatable first page is handled in RepeatableListScreen
 
     return { leftAction, rightAction, secondaryRightAction };
   }, [
-    canSubmit,
+    canPrimaryAction,
     enterEditMode,
-    handleFormSubmit,
+    handlePrimaryAction,
     isFirstSpecialPage,
     isNestedDrilldownPage,
     isReadOnly,
@@ -2451,13 +2500,14 @@ function FormRendererInner({
           leftAction={headerActions.leftAction}
           rightAction={headerActions.rightAction}
           secondaryRightAction={headerActions.secondaryRightAction}
-          canSubmit={canSubmit}
+          canSubmit={canPrimaryAction}
           showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
           onTitlePress={
             canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined
           }
         />
       )}
+      {showHeader && !activeRepeatableScreen ? headerAccessory : null}
 
       {/* Form Content */}
       {activeRepeatableScreen ? renderRepeatableScreens(theme) : renderMainFormContent(theme)}
