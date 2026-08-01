@@ -62,6 +62,11 @@ export type FormRendererSubmitMeta = {
   timestamps?: FormRendererSnapshotTimestamps;
 };
 
+export type FormRendererSaveMeta = {
+  validationSummary: FormRendererValidationSummary;
+  dirty: boolean;
+};
+
 export type FormRendererEngineOperation = Record<string, any> & {
   type?: string;
   operation?: string;
@@ -101,6 +106,10 @@ export type FormRendererProps = {
     structuredRecord: Record<string, any>,
     meta?: FormRendererSubmitMeta,
   ) => void | Promise<void>;
+  onSave?: (
+    snapshot: FormRendererSnapshot,
+    meta: FormRendererSaveMeta,
+  ) => void | Promise<void>;
   onSnapshotChange?: (
     snapshot: FormRendererSnapshot,
     meta: FormRendererSnapshotChangeMeta,
@@ -119,6 +128,7 @@ export type FormRendererProps = {
   showHeader?: boolean;
   primaryActionMode?: 'submit' | 'save';
   primaryActionLabel?: string;
+  headerAccessory?: ReactNode;
   forceShowNavigationPanel?: boolean;
   colorMode?: 'light' | 'dark';
   customTheme?: Record<string, any> | null;

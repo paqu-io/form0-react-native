@@ -455,6 +455,58 @@ test('root submit is validation-gated and returns structured payload metadata', 
   );
 });
 
+test('save mode exposes a validation-tolerant snapshot action', () => {
+  assert.match(
+    formRendererSource,
+    /const handleFormSave = useCallback\(/,
+    'FormRenderer should own a save handler independent from submit',
+  );
+
+  assert.match(
+    formRendererSource,
+    /onSave\(nextSnapshot, \{[\s\S]*validationSummary:[\s\S]*dirty: hasChanges/,
+    'Save should return the current snapshot, validation summary, and dirty state',
+  );
+
+  assert.doesNotMatch(
+    formRendererSource,
+    /const handleFormSave = useCallback\([\s\S]*?validationSummary\?\.hasErrors[\s\S]*?return;/,
+    'Save should not be blocked by validation errors',
+  );
+
+  assert.match(
+    formRendererSource,
+    /primaryActionMode === 'save' && typeof onSave === 'function'/,
+    'Save mode should prefer the validation-tolerant save callback',
+  );
+
+  assert.match(
+    packageTypesSource,
+    /export type FormRendererSaveMeta = \{/,
+    'Package types should expose save metadata',
+  );
+
+  assert.match(
+    packageTypesSource,
+    /onSave\?: \([\s\S]*snapshot: FormRendererSnapshot,[\s\S]*meta: FormRendererSaveMeta/,
+    'Package types should expose the save callback',
+  );
+});
+
+test('form renderer places a generic accessory below its header', () => {
+  assert.match(
+    formRendererSource,
+    /<FormHeader[\s\S]*?\/>[\s\S]*?headerAccessory/,
+    'Header accessories should render after the safe-area-aware form header',
+  );
+
+  assert.match(
+    packageTypesSource,
+    /headerAccessory\?: ReactNode;/,
+    'Package types should expose the header accessory slot',
+  );
+});
+
 test('package types document snapshot and engine option contracts', () => {
   assert.match(
     packageTypesSource,
