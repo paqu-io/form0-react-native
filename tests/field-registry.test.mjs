@@ -56,8 +56,20 @@ test('field registry still merges renderer overrides', () => {
 
   assert.match(
     fieldRegistrySource,
-    /warnAboutPlaceholderBackedFieldTypes/,
-    'Field registry should warn when placeholder-backed defaults are still active',
+    /function getFieldComponentFromState\(state, type\) \{\s*const component = state\.registry\.get\(type\);\s*warnAboutPlaceholderBackedFieldType\(state, type, component\);/,
+    'Field registry should check placeholder warnings only when a renderer is resolved',
+  );
+
+  assert.doesNotMatch(
+    fieldRegistrySource,
+    /function createFieldRegistry[\s\S]*warnAboutPlaceholderBackedFieldTypes\(state\)/,
+    'Creating a registry should not eagerly warn about unused placeholder renderers',
+  );
+
+  assert.match(
+    fieldRegistrySource,
+    /state\.warnedPlaceholderFieldTypes\.has\(type\)/,
+    'Each placeholder-backed type should warn at most once until the registry is reset',
   );
 
   assert.match(

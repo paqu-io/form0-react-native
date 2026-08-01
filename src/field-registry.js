@@ -39,9 +39,9 @@ function createInternalRegistryState({
     warnOnUnregisteredTypes,
     registry: new Map(),
     warnedFieldTypes: new Set(),
+    warnedPlaceholderFieldTypes: new Set(),
     missingDefaultFieldTypes: new Set(),
     lastMissingWarningKey: null,
-    lastPlaceholderWarningKey: null,
   };
 
   if (includeDefaults) {
@@ -56,16 +56,19 @@ function registerFieldComponentInState(state, type, component) {
   assertValidRegistration(type, component);
   state.registry.set(type, component);
   state.warnedFieldTypes.delete(type);
+  state.warnedPlaceholderFieldTypes.delete(type);
   recomputeMissingFieldTypes(state);
 }
 
 function unregisterFieldComponentInState(state, type) {
   state.registry.delete(type);
+  state.warnedPlaceholderFieldTypes.delete(type);
   recomputeMissingFieldTypes(state);
 }
 
 function getFieldComponentFromState(state, type) {
   const component = state.registry.get(type);
+  warnAboutPlaceholderBackedFieldType(state, type, component);
   if (!component && type && state.warnOnUnregisteredTypes && !state.warnedFieldTypes.has(type)) {
     if (IS_DEV) {
       console.warn(`form0-react-native: no renderer registered for "${type}".`);
@@ -78,11 +81,11 @@ function getFieldComponentFromState(state, type) {
 function resetFieldComponentsInState(state) {
   state.registry.clear();
   state.warnedFieldTypes.clear();
+  state.warnedPlaceholderFieldTypes.clear();
   if (state.includeDefaults) {
     registerDefaultFieldComponentsInState(state);
   }
   recomputeMissingFieldTypes(state);
-  warnAboutPlaceholderBackedFieldTypes(state);
 }
 
 function listRegisteredFieldTypesFromState(state) {
@@ -147,31 +150,24 @@ function warnAboutMissingDefaultFieldTypes(state) {
   );
 }
 
-function warnAboutPlaceholderBackedFieldTypes(state) {
-  if (!IS_DEV || !state.includeDefaults) {
-    state.lastPlaceholderWarningKey = null;
+function warnAboutPlaceholderBackedFieldType(state, type, component) {
+  if (
+    !IS_DEV ||
+    !state.includeDefaults ||
+    !type ||
+    state.warnedPlaceholderFieldTypes.has(type) ||
+    !placeholderBackedFieldTypes.includes(type) ||
+    component !== defaultFieldComponents[type]
+  ) {
     return;
   }
 
-  const placeholderTypes = placeholderBackedFieldTypes.filter(
-    (type) => state.registry.get(type) === defaultFieldComponents[type]
-  );
-  if (placeholderTypes.length === 0) {
-    state.lastPlaceholderWarningKey = null;
-    return;
-  }
-
-  const warningKey = placeholderTypes.join(',');
-  if (warningKey === state.lastPlaceholderWarningKey) {
-    return;
-  }
-
-  state.lastPlaceholderWarningKey = warningKey;
+  state.warnedPlaceholderFieldTypes.add(type);
   console.warn(
     [
       'form0-react-native:',
-      'the default renderer for field type(s)',
-      placeholderTypes.join(', '),
+      'the default renderer for field type',
+      type,
       'is still a placeholder.',
       'Provide custom renderers for production use until first-class native components ship.',
     ].join(' ')
@@ -220,8 +216,6 @@ export function createFieldRegistry(options = {}) {
       registerFieldComponentInState(state, type, component);
     });
   }
-
-  warnAboutPlaceholderBackedFieldTypes(state);
 
   return createRegistryAPI(state);
 }
