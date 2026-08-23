@@ -48,6 +48,7 @@ import {
   buildSubmissionTimestampSnapshot,
   DEFAULT_FIELD_KEY_MODE,
 } from './utils/submission.js';
+import { buildDatasetDescriptors, resolveDatasetRowTitle } from 'form0-core';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
 const SECTION_LIKE_TYPES = new Set(['Section', 'RepeatableSection', 'BuildingPlanSection']);
@@ -56,6 +57,21 @@ const REPEATABLE_TYPE = 'RepeatableSection';
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 const KEYBOARD_DISMISS_MODE = Platform.OS === 'ios' ? 'interactive' : 'on-drag';
 const DEFAULT_SCROLL_OFFSET = 24;
+
+function buildTitleDatasetIndex(schema) {
+  const descriptors = buildDatasetDescriptors(schema);
+  const byRepeatableKey = new Map();
+  descriptors.forEach((descriptor) => {
+    if (descriptor.kind !== 'repeatable') return;
+    [descriptor.repeatable_field_id, descriptor.repeatable_output_key].forEach((reference) => {
+      if (reference) byRepeatableKey.set(reference, descriptor);
+    });
+  });
+  return {
+    root: descriptors.find((descriptor) => descriptor.kind === 'root') || null,
+    byRepeatableKey,
+  };
+}
 
 /**
  * Build section hierarchy metadata for drilldown navigation.
@@ -122,7 +138,9 @@ function buildSectionHierarchy(elements = [], resolveRepeatableKey, isVisible = 
 
         if (
           hasSectionId &&
-          (el.type === 'Section' || el.type === 'RepeatableSection' || el.type === 'BuildingPlanSection')
+          (el.type === 'Section' ||
+            el.type === 'RepeatableSection' ||
+            el.type === 'BuildingPlanSection')
         ) {
           treeNodes.push({
             id: sectionId,
@@ -143,7 +161,11 @@ function buildSectionHierarchy(elements = [], resolveRepeatableKey, isVisible = 
   };
 
   const sectionTree = traverse(elements);
-  return { sectionTree, sectionMetadata: metadata, fieldToSectionPath: fieldPathMap };
+  return {
+    sectionTree,
+    sectionMetadata: metadata,
+    fieldToSectionPath: fieldPathMap,
+  };
 }
 
 /**
@@ -200,7 +222,12 @@ const KeyboardFormScrollView = React.forwardRef(function KeyboardFormScrollView(
 ) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_BEHAVIOR}>
-      <FormScrollView ref={ref} contentContainerStyle={contentContainerStyle} style={style} {...props}>
+      <FormScrollView
+        ref={ref}
+        contentContainerStyle={contentContainerStyle}
+        style={style}
+        {...props}
+      >
         {children}
       </FormScrollView>
     </KeyboardAvoidingView>
@@ -209,9 +236,7 @@ const KeyboardFormScrollView = React.forwardRef(function KeyboardFormScrollView(
 
 function isActiveNormalDrilldownSection(sectionInfo) {
   return (
-    sectionInfo?.type === 'Section' &&
-    sectionInfo?.display === 'drilldown' &&
-    sectionInfo?.field
+    sectionInfo?.type === 'Section' && sectionInfo?.display === 'drilldown' && sectionInfo?.field
   );
 }
 
@@ -647,10 +672,7 @@ function useOperationAlertBridge(externalOnOperations) {
       };
 
       operations.forEach((operation) => {
-        if (
-          operation?.type === 'UI_OPERATION' &&
-          operation?.operation === 'ALERT'
-        ) {
+        if (operation?.type === 'UI_OPERATION' && operation?.operation === 'ALERT') {
           flushPassthroughOperations();
           nextAlertIdRef.current += 1;
           setAlertQueue((previous) => [
@@ -708,7 +730,9 @@ export function FormRenderer({
   imageResolver = null,
   engineOptions,
 }) {
-  const mainScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
+  const mainScroll = useKeyboardAwareScroll({
+    scrollOffset: keyboardScrollOffset,
+  });
   const initialSnapshotRawValues = useMemo(() => {
     if (!initialSnapshot) {
       return null;
@@ -846,14 +870,12 @@ export function FormRenderer({
   }, [finalSchema]);
 
   const elements = finalSchema?.form?.elements || [];
-  const repeatableMetadata = useMemo(
-    () => buildRepeatableInfo(elements),
-    [elements]
-  );
+  const titleDatasets = useMemo(() => buildTitleDatasetIndex(finalSchema), [finalSchema]);
+  const repeatableMetadata = useMemo(() => buildRepeatableInfo(elements), [elements]);
   const statusField = finalSchema?.form?.status_field || null;
   const statusFieldName = statusField?.data_name || null;
   const statusValue = statusFieldName
-    ? values?.[statusFieldName] ?? statusField?.default_value ?? null
+    ? (values?.[statusFieldName] ?? statusField?.default_value ?? null)
     : null;
   const { timestamps, timestampsRef, touchUpdatedAt } = useRecordTimestamps({
     initialValues: appliedInitialTimestampSeedValues,
@@ -905,16 +927,10 @@ export function FormRenderer({
     const nextInitialValues = cloneDeep(rendererInitialValues || {});
     const nextTimestampSeedValues = cloneDeep(initialTimestampSeedValues || {});
     const nextRepeatableState = cloneDeep(initialRepeatableSeed || {});
-    const nextSeedSignature = buildSnapshotSeedSignature(
-      nextInitialValues,
-      nextRepeatableState
-    );
+    const nextSeedSignature = buildSnapshotSeedSignature(nextInitialValues, nextRepeatableState);
     const schemaChanged = appliedSchemaRef.current !== schema;
 
-    if (
-      !schemaChanged &&
-      appliedSnapshotSeedSignatureRef.current === nextSeedSignature
-    ) {
+    if (!schemaChanged && appliedSnapshotSeedSignatureRef.current === nextSeedSignature) {
       return;
     }
 
@@ -998,16 +1014,20 @@ export function FormRenderer({
   const drilldownDepth = activeDrilldownPath.length;
   const isRootPage = drilldownDepth === 0;
   const isFirstSpecialPage = drilldownDepth === 1 && isSpecialSectionActive;
-  const isNestedDrilldownPage = drilldownDepth > 0 && (!isSpecialSectionActive || drilldownDepth > 1);
+  const isNestedDrilldownPage =
+    drilldownDepth > 0 && (!isSpecialSectionActive || drilldownDepth > 1);
   const isRepeatableFirstPage =
     isFirstSpecialPage && activeDrilldownSectionInfo?.type === 'RepeatableSection';
 
   // Drilldown navigation functions
-  const pushDrilldownSection = useCallback((sectionId) => {
-    const section = sectionMetadata[sectionId];
-    if (!section) return;
-    setActiveDrilldownPath(section.drilldownPath);
-  }, [sectionMetadata]);
+  const pushDrilldownSection = useCallback(
+    (sectionId) => {
+      const section = sectionMetadata[sectionId];
+      if (!section) return;
+      setActiveDrilldownPath(section.drilldownPath);
+    },
+    [sectionMetadata]
+  );
 
   const popDrilldownLevel = useCallback(() => {
     if (!activeDrilldownSectionId) {
@@ -1095,7 +1115,9 @@ export function FormRenderer({
         return;
       }
 
-      const drilldownPath = Array.isArray(sectionInfo.drilldownPath) ? sectionInfo.drilldownPath : [];
+      const drilldownPath = Array.isArray(sectionInfo.drilldownPath)
+        ? sectionInfo.drilldownPath
+        : [];
       const opensDrilldown = drilldownPath[drilldownPath.length - 1] === sectionId;
       if (opensDrilldown) {
         setActiveDrilldownPath(drilldownPath);
@@ -1193,24 +1215,18 @@ export function FormRenderer({
     [markRootDirty, setValue, triggerEvent]
   );
 
-  const getRepeatableInstances = useCallback(
-    (repeatableKey, parentPath = []) => {
-      return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
-    },
-    []
-  );
+  const getRepeatableInstances = useCallback((repeatableKey, parentPath = []) => {
+    return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
+  }, []);
 
-  const getRepeatableInstance = useCallback(
-    (repeatableKey, instanceId, parentPath = []) => {
-      return getRepeatableInstanceFromState(
-        repeatableStateRef.current,
-        repeatableKey,
-        instanceId,
-        parentPath
-      );
-    },
-    []
-  );
+  const getRepeatableInstance = useCallback((repeatableKey, instanceId, parentPath = []) => {
+    return getRepeatableInstanceFromState(
+      repeatableStateRef.current,
+      repeatableKey,
+      instanceId,
+      parentPath
+    );
+  }, []);
 
   const updateRepeatableState = useCallback((updater) => {
     setRepeatableState((prev) => {
@@ -1271,16 +1287,13 @@ export function FormRenderer({
     [updateRepeatableState]
   );
 
-  const buildParentValuesForPath = useCallback(
-    (path = []) => {
-      return buildRepeatableParentValues({
-        seedValues: valuesRef.current,
-        repeatableState: repeatableStateRef.current,
-        path,
-      });
-    },
-    []
-  );
+  const buildParentValuesForPath = useCallback((path = []) => {
+    return buildRepeatableParentValues({
+      seedValues: valuesRef.current,
+      repeatableState: repeatableStateRef.current,
+      path,
+    });
+  }, []);
 
   const formRepeatableController = useMemo(
     () => ({
@@ -1403,9 +1416,7 @@ export function FormRenderer({
                 createEmptyRepeatableInstance(repInfo)
             )
           : cloneDeep(draft || createEmptyRepeatableInstance(repInfo));
-      const frozenParentValues = cloneDeep(
-        controller?.buildParentValues?.(frozenParentPath) || {}
-      );
+      const frozenParentValues = cloneDeep(controller?.buildParentValues?.(frozenParentPath) || {});
 
       pushRepeatableScreen({
         type: 'edit',
@@ -1548,8 +1559,7 @@ export function FormRenderer({
             }
             const sectionPath = [...parentSectionPath, sectionId];
             const isAncestorOfActive =
-              sectionId !== activeDrilldownSectionId &&
-              activeDrilldownFullPath.includes(sectionId);
+              sectionId !== activeDrilldownSectionId && activeDrilldownFullPath.includes(sectionId);
             const isWithinActiveBranch = sectionPath.includes(activeDrilldownSectionId);
 
             if (!isAncestorOfActive && !isWithinActiveBranch) {
@@ -1636,7 +1646,14 @@ export function FormRenderer({
                 }}
               >
                 {/* Left side: label and count pill */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    flex: 1,
+                    gap: 8,
+                  }}
+                >
                   <Text
                     style={{
                       fontWeight: '600',
@@ -1661,14 +1678,20 @@ export function FormRenderer({
                     paddingHorizontal: 10,
                     borderRadius: 6,
                     backgroundColor: pressed
-                      ? (t.color.drilldownButtonBg || t.color.buttonBg)
+                      ? t.color.drilldownButtonBg || t.color.buttonBg
                       : 'transparent',
                     borderWidth: 1,
                     borderColor: t.color.border,
                     gap: 4,
                   })}
                 >
-                  <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: t.fontSize.sm }}>
+                  <Text
+                    style={{
+                      color: t.color.foreground,
+                      fontWeight: '500',
+                      fontSize: t.fontSize.sm,
+                    }}
+                  >
                     View
                   </Text>
                   <ChevronRight size={16} color={t.color.foreground} strokeWidth={2} />
@@ -1692,11 +1715,10 @@ export function FormRenderer({
             const sectionInfo = sectionMeta[sectionId];
             const sectionDrilldownPath = sectionInfo?.drilldownPath ?? [];
             const isDescendantOfActive =
-              drilldownPath.length > 0
-                ? isPathPrefix(drilldownPath, sectionDrilldownPath)
-                : false;
+              drilldownPath.length > 0 ? isPathPrefix(drilldownPath, sectionDrilldownPath) : false;
             const isOnActivePath = isPathPrefix(sectionDrilldownPath, drilldownPath);
-            const isCurrentLevelActive = isOnActivePath && sectionDrilldownPath.length === drilldownPath.length;
+            const isCurrentLevelActive =
+              isOnActivePath && sectionDrilldownPath.length === drilldownPath.length;
 
             // If there's an active drilldown and this section is not on the path, hide it
             if (drilldownPath.length > 0 && !isOnActivePath && !isDescendantOfActive) {
@@ -1750,14 +1772,20 @@ export function FormRenderer({
                         paddingHorizontal: 10,
                         borderRadius: 6,
                         backgroundColor: pressed
-                          ? (t.color.drilldownButtonBg || t.color.buttonBg)
+                          ? t.color.drilldownButtonBg || t.color.buttonBg
                           : 'transparent',
                         borderWidth: 1,
                         borderColor: t.color.border,
                         gap: 4,
                       })}
                     >
-                      <Text style={{ color: t.color.foreground, fontWeight: '500', fontSize: t.fontSize.sm }}>
+                      <Text
+                        style={{
+                          color: t.color.foreground,
+                          fontWeight: '500',
+                          fontSize: t.fontSize.sm,
+                        }}
+                      >
                         View
                       </Text>
                       <ChevronRight size={16} color={t.color.foreground} strokeWidth={2} />
@@ -1962,15 +1990,21 @@ export function FormRenderer({
         );
       });
     },
-    [labelPosition, labelWidthPercent, openRepeatableEditor, openRepeatableList, resolveRepeatableInfo, sectionMetadata]
+    [
+      labelPosition,
+      labelWidthPercent,
+      openRepeatableEditor,
+      openRepeatableList,
+      resolveRepeatableInfo,
+      sectionMetadata,
+    ]
   );
 
   const canSubmit = !isReadOnly && typeof onSubmit === 'function';
   const canSave = !isReadOnly && typeof onSave === 'function';
   const hasSubmitHandler = typeof onSubmit === 'function';
   const hasSaveHandler = typeof onSave === 'function';
-  const useSaveAction =
-    primaryActionMode === 'save' && typeof onSave === 'function';
+  const useSaveAction = primaryActionMode === 'save' && typeof onSave === 'function';
   const canPrimaryAction = useSaveAction ? canSave : canSubmit;
   const hasPrimaryAction = useSaveAction ? hasSaveHandler : hasSubmitHandler;
   const activeRepeatableScreen = repeatableStack[repeatableStack.length - 1] || null;
@@ -1988,18 +2022,14 @@ export function FormRenderer({
     }
 
     if (hasChanges) {
-      Alert.alert(
-        'Discard changes?',
-        'You have unsaved changes that will be lost.',
-        [
-          { text: 'Keep Editing', style: 'cancel' },
-          {
-            text: 'Discard',
-            style: 'destructive',
-            onPress: () => onRequestClose({ reason: 'cancel' }),
-          },
-        ]
-      );
+      Alert.alert('Discard changes?', 'You have unsaved changes that will be lost.', [
+        { text: 'Keep Editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => onRequestClose({ reason: 'cancel' }),
+        },
+      ]);
     } else {
       onRequestClose({ reason: 'cancel' });
     }
@@ -2020,10 +2050,7 @@ export function FormRenderer({
     const submittedAt = new Date().toISOString();
     touchUpdatedAt(submittedAt);
     const submissionValues = submit();
-    const timestampSnapshot = buildSubmissionTimestampSnapshot(
-      timestampsRef.current,
-      submittedAt
-    );
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(timestampsRef.current, submittedAt);
     const submission = buildStructuredSubmission({
       schema: finalSchema,
       values: submissionValues,
@@ -2057,10 +2084,7 @@ export function FormRenderer({
     setSubmitCount((count) => count + 1);
     const savedAt = new Date().toISOString();
     touchUpdatedAt(savedAt);
-    const timestampSnapshot = buildSubmissionTimestampSnapshot(
-      timestampsRef.current,
-      savedAt
-    );
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(timestampsRef.current, savedAt);
     const nextSnapshot = {
       raw_values: buildSubmissionRawValues({
         values: valuesRef.current,
@@ -2088,19 +2112,16 @@ export function FormRenderer({
 
   const handlePrimaryAction = useSaveAction ? handleFormSave : handleFormSubmit;
 
-  const getRepeatableEntryTitle = (field, instance, index) => {
-    const titleFieldDataName = field?.title_field?.data_name;
-    if (titleFieldDataName && instance?.values?.[titleFieldDataName]) {
-      return String(instance.values[titleFieldDataName]);
-    }
-    const fallbackKeys = ['title', 'name', 'label'];
-    for (const key of fallbackKeys) {
-      if (instance?.values?.[key]) {
-        return String(instance.values[key]);
-      }
-    }
-    return `${field?.label || 'Entry'} ${index + 1}`;
-  };
+  const getRepeatableEntryTitle = useCallback(
+    (field, instance, index) => {
+      const descriptor = titleDatasets.byRepeatableKey.get(field?.key || field?.data_name);
+      return (
+        resolveDatasetRowTitle(descriptor, instance?.values || {}) ||
+        `${field?.label || 'Entry'} ${index + 1}`
+      );
+    },
+    [titleDatasets]
+  );
 
   const handleRepeatableSave = useCallback(
     (screen, payload) => {
@@ -2109,12 +2130,7 @@ export function FormRenderer({
       }
       const { repeatableKey, parentPath, mode: saveMode, instanceId } = screen;
       if (saveMode === 'edit' && typeof screen.controller.updateInstance === 'function') {
-        screen.controller.updateInstance(
-          repeatableKey,
-          instanceId,
-          () => payload,
-          parentPath
-        );
+        screen.controller.updateInstance(repeatableKey, instanceId, () => payload, parentPath);
       } else if (saveMode !== 'edit' && typeof screen.controller.addInstance === 'function') {
         screen.controller.addInstance(repeatableKey, {
           parentPath,
@@ -2160,7 +2176,8 @@ export function FormRenderer({
         instanceId,
         screen.parentPath
       );
-      const instances = screen.controller.getInstances?.(screen.repeatableKey, screen.parentPath) || [];
+      const instances =
+        screen.controller.getInstances?.(screen.repeatableKey, screen.parentPath) || [];
       const index = instances.findIndex((entry) => entry.id === instanceId);
 
       setPendingRepeatableRemoval({
@@ -2208,7 +2225,8 @@ export function FormRenderer({
     setPendingRepeatableRemoval(null);
   }, [markRootDirty, pendingRepeatableRemoval, touchUpdatedAt]);
 
-  const formName = finalSchema?.form?.name || null;
+  const formName =
+    resolveDatasetRowTitle(titleDatasets.root, values) || finalSchema?.form?.name || null;
 
   // Render the main form content (with themed background)
   const renderMainFormContent = (theme) => {
@@ -2266,6 +2284,12 @@ export function FormRenderer({
                 openRepeatableEditor({
                   ...screen,
                   instanceId,
+                  instanceIndex: Math.max(
+                    screen.controller
+                      ?.getInstances(screen.repeatableKey, screen.parentPath)
+                      ?.findIndex((instance) => instance.id === instanceId) ?? 0,
+                    0
+                  ),
                   mode: 'edit',
                 })
               }
@@ -2274,6 +2298,9 @@ export function FormRenderer({
                 openRepeatableEditor({
                   ...screen,
                   instanceId: draft.id,
+                  instanceIndex:
+                    screen.controller?.getInstances(screen.repeatableKey, screen.parentPath)
+                      ?.length || 0,
                   mode: 'create',
                   draft,
                 });
@@ -2502,9 +2529,7 @@ function FormRendererInner({
           secondaryRightAction={headerActions.secondaryRightAction}
           canSubmit={canPrimaryAction}
           showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
-          onTitlePress={
-            canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined
-          }
+          onTitlePress={canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined}
         />
       )}
       {showHeader && !activeRepeatableScreen ? headerAccessory : null}
@@ -2675,8 +2700,7 @@ function FormNavigationSheet({
             >
               <Text
                 style={{
-                  color:
-                    activeTab === 'sections' ? theme.color.buttonFg : theme.color.foreground,
+                  color: activeTab === 'sections' ? theme.color.buttonFg : theme.color.foreground,
                   textAlign: 'center',
                   fontWeight: '600',
                 }}
@@ -2692,8 +2716,7 @@ function FormNavigationSheet({
                 paddingHorizontal: 12,
                 borderRadius: 999,
                 borderWidth: 1,
-                borderColor:
-                  activeTab === 'issues' ? theme.color.buttonBorder : theme.color.border,
+                borderColor: activeTab === 'issues' ? theme.color.buttonBorder : theme.color.border,
                 backgroundColor:
                   activeTab === 'issues'
                     ? theme.color.buttonBg
@@ -2754,16 +2777,19 @@ function FormNavigationSheet({
                         {issue.message}
                       </Text>
                       {issue.sectionLabel ? (
-                        <Text style={{ color: theme.color.description, fontSize: theme.fontSize.sm }}>
+                        <Text
+                          style={{
+                            color: theme.color.description,
+                            fontSize: theme.fontSize.sm,
+                          }}
+                        >
                           {issue.sectionLabel}
                         </Text>
                       ) : null}
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ color: theme.color.description }}>
-                    No validation issues.
-                  </Text>
+                  <Text style={{ color: theme.color.description }}>No validation issues.</Text>
                 )
               ) : (
                 <Text style={{ color: theme.color.description }}>
@@ -2777,9 +2803,7 @@ function FormNavigationSheet({
                 onSelectSection={onSelectSection}
               />
             ) : (
-              <Text style={{ color: theme.color.description }}>
-                This form has no sections.
-              </Text>
+              <Text style={{ color: theme.color.description }}>This form has no sections.</Text>
             )}
           </ScrollView>
         </Pressable>
@@ -2807,13 +2831,7 @@ function NavigationSectionTree({ sections = [], activeSectionId = null, onSelect
   );
 }
 
-function NavigationSectionNode({
-  node,
-  level,
-  activeSectionId,
-  onSelectSection,
-  theme,
-}) {
+function NavigationSectionNode({ node, level, activeSectionId, onSelectSection, theme }) {
   if (!node?.id) {
     return null;
   }
@@ -2876,8 +2894,7 @@ function RepeatableListScreen({
   readOnly,
   theme,
 }) {
-  const instances =
-    screen.controller?.getInstances(screen.repeatableKey, screen.parentPath) || [];
+  const instances = screen.controller?.getInstances(screen.repeatableKey, screen.parentPath) || [];
   const label = screen.field?.label || 'Repeatable Section';
   const description = screen.field?.description || null;
   const addLabel = `+ ${getRepeatableAddLabel(screen.field)}`;
@@ -2937,7 +2954,12 @@ function RepeatableListScreen({
               }}
             >
               <Text
-                style={{ fontWeight: '600', color: theme.color.foreground, flex: 1, marginRight: 12 }}
+                style={{
+                  fontWeight: '600',
+                  color: theme.color.foreground,
+                  flex: 1,
+                  marginRight: 12,
+                }}
                 numberOfLines={1}
               >
                 {getEntryTitle(screen.field, instance, index)}
@@ -2994,7 +3016,9 @@ function RepeatableEditorScreen({
   theme,
   forceShowNavigationPanel = false,
 }) {
-  const editorScroll = useKeyboardAwareScroll({ scrollOffset: keyboardScrollOffset });
+  const editorScroll = useKeyboardAwareScroll({
+    scrollOffset: keyboardScrollOffset,
+  });
   const fieldContainerRefs = useRef(new Map());
   const fieldInputRefs = useRef(new Map());
   const sectionContainerRefs = useRef(new Map());
@@ -3042,6 +3066,10 @@ function RepeatableEditorScreen({
     initialInstance: initialInstance || createEmptyRepeatableInstance(screen.repInfo),
     options: effectiveEngineOptions,
   });
+  const titleDatasets = useMemo(() => buildTitleDatasetIndex(schema), [schema]);
+  const entryTitle =
+    resolveDatasetRowTitle(titleDatasets.byRepeatableKey.get(screen.repeatableKey), values) ||
+    `${screen.field?.label || 'Entry'} ${(screen.instanceIndex ?? 0) + 1}`;
   const [submitCount, setSubmitCount] = useState(0);
   const [discardDialogVisible, setDiscardDialogVisible] = useState(false);
   const initialSnapshotRef = useRef({
@@ -3300,7 +3328,9 @@ function RepeatableEditorScreen({
         return;
       }
 
-      const drilldownPath = Array.isArray(sectionInfo.drilldownPath) ? sectionInfo.drilldownPath : [];
+      const drilldownPath = Array.isArray(sectionInfo.drilldownPath)
+        ? sectionInfo.drilldownPath
+        : [];
       const opensDrilldown = drilldownPath[drilldownPath.length - 1] === sectionId;
       if (opensDrilldown) {
         setActiveDrilldownPath(drilldownPath);
@@ -3388,10 +3418,7 @@ function RepeatableEditorScreen({
     }
     const savedAt = new Date().toISOString();
     touchUpdatedAt(savedAt);
-    const timestampSnapshot = buildSubmissionTimestampSnapshot(
-      timestampsRef.current,
-      savedAt
-    );
+    const timestampSnapshot = buildSubmissionTimestampSnapshot(timestampsRef.current, savedAt);
     const payload = {
       ...(initialInstance || {}),
       id: instanceId,
@@ -3436,7 +3463,7 @@ function RepeatableEditorScreen({
           onPress: handleSave,
         }
       : null;
-  const headerTitle = activeDrilldownSectionInfo?.label || screen.field?.label || 'Entry';
+  const headerTitle = activeDrilldownSectionInfo?.label || entryTitle;
   const renderOptions = {
     state: { values, visible, required, read_only, errors },
     setValue,
@@ -3471,9 +3498,7 @@ function RepeatableEditorScreen({
         leftAction={leftAction}
         rightAction={rightAction}
         showPrimaryActionsInViewMode={false}
-        onTitlePress={
-          canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined
-        }
+        onTitlePress={canOpenNavigationSheet ? () => setNavigationSheetVisible(true) : undefined}
       />
       <KeyboardFormScrollView
         ref={editorScroll.scrollRef}
@@ -3482,8 +3507,7 @@ function RepeatableEditorScreen({
         contentContainerStyle={{ padding: 16 }}
         style={{ backgroundColor: theme.color.background }}
       >
-        {activeSectionBody ||
-          renderElements(screen.repInfo?.field?.elements || [], renderOptions)}
+        {activeSectionBody || renderElements(screen.repInfo?.field?.elements || [], renderOptions)}
       </KeyboardFormScrollView>
       <FormNavigationSheet
         visible={navigationSheetVisible}
@@ -3715,11 +3739,7 @@ function OperationAlertDialog({ visible, alert, onClose }) {
             >
               {title}
             </Text>
-            {message ? (
-              <Text style={{ color: theme.color.description }}>
-                {message}
-              </Text>
-            ) : null}
+            {message ? <Text style={{ color: theme.color.description }}>{message}</Text> : null}
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
             <Pressable

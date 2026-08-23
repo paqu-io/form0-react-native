@@ -39,6 +39,15 @@ const submissionSchema = {
         type: 'RepeatableSection',
         label: 'Repeatable',
         data_name: 'repeatable',
+        title_field: {
+          type: 'TitleField',
+          key: '@title',
+          data_name: 'title',
+          label: 'Title',
+          display: 'default',
+          enabled: true,
+          elements: ['repeatable-text'],
+        },
         elements: [
           {
             key: 'repeatable-text',
@@ -96,18 +105,13 @@ test('structured submission returns web-aligned meta and preserves media identif
   assert.deepEqual(submission.repeatable, repeatable);
   assert.equal(submission.structuredRecord['@status'], 'active');
   assert.equal(submission.structuredRecord.form_values.text_field, 'Vitto');
-  assert.equal(
-    submission.structuredRecord.form_values.photo_field[0].photo_id,
-    'photo-1',
-  );
-  assert.equal(
-    submission.structuredRecord.form_values.signature_field.signature_id,
-    'signature-1',
-  );
+  assert.equal(submission.structuredRecord.form_values.photo_field[0].photo_id, 'photo-1');
+  assert.equal(submission.structuredRecord.form_values.signature_field.signature_id, 'signature-1');
   assert.equal(submission.structuredRecord.form_values.repeatable.length, 1);
+  assert.equal(submission.structuredRecord.form_values.repeatable[0]['@title'], 'Nested value');
   assert.equal(
     submission.structuredRecord.form_values.repeatable[0].form_values.repeatable_text,
-    'Nested value',
+    'Nested value'
   );
 });
 

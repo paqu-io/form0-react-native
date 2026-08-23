@@ -5,7 +5,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
-  "description": "React Native bindings for form0 ecosystem.",
+  "description": "React Native bindings for form0, the open-source schema-driven form ecosystem by paqu.io. Render a JSON form schema on mobile, including offline.",
   "main": "src/index.js",
   "module": "src/index.js",
   "types": "src/index.d.ts",
@@ -20,21 +20,20 @@
     "test": "node --test tests/*.test.mjs"
   },
   "keywords": [
-    "form",
-    "form-builder",
-    "form-generator",
-    "form-engine",
-    "schema",
-    "json-schema",
+    "form0",
+    "paqu-io",
     "react-native",
+    "expo",
+    "mobile-forms",
+    "form-engine",
+    "schema-driven-forms",
+    "json-schema",
     "dynamic-forms",
-    "ui",
-    "component-library",
-    "design-system",
-    "form-components",
-    "form-ui"
+    "conditional-logic",
+    "form-validation",
+    "offline-first"
   ],
-  "author": "paqu.io <hello@paqu.io>",
+  "author": "paqu.io <hello@paqu.io> (https://paqu.io/)",
   "contributors": [
     {
       "name": "aragornii"
@@ -42,7 +41,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "form0-core": "^0.1.25"
+    "form0-core": "^0.1.26"
   },
   "devDependencies": {
     "ignore": "^7.0.5"
