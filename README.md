@@ -20,7 +20,7 @@ application to provide its own components, theme, media handling, and image reso
 
 ## 🚀 Start with the CLI
 
-For a new project, install [`form0-cli`](https://github.com/paqu-io/form0-cli) and follow the
+For a new project, install [`form0-cli`](https://www.npmjs.com/package/form0-cli) and follow the
 [quickstart](https://docs.form0.dev/getting-started/quickstart). Choose the mobile application
 option to start from the maintained Expo template.
 
@@ -91,7 +91,8 @@ const renderers = {
 <FormRenderer schema={schema} renderers={renderers} />;
 ```
 
-> [!IMPORTANT] > `PhotoField` and `VideoField` use placeholder-backed defaults. Production applications should
+> [!IMPORTANT]
+> `PhotoField` and `VideoField` use placeholder-backed defaults. Production applications should
 > provide renderers that own capture, storage, upload, and permission handling for those fields.
 
 `SignatureField` has a built-in native renderer and can also be overridden. The package includes a
@@ -112,7 +113,12 @@ for current renderer coverage and planned work.
 ## 📚 Documentation
 
 - [Quickstart](https://docs.form0.dev/getting-started/quickstart)
-- [Full documentation](https://docs.form0.dev)
+- [Bindings overview](https://docs.form0.dev/bindings/overview)
+- [Install and render with React Native](https://docs.form0.dev/bindings/react-native/install-render)
+- [FormRenderer](https://docs.form0.dev/bindings/react-native/form-renderer)
+- [Custom field renderers](https://docs.form0.dev/bindings/react-native/custom-renderers)
+- [Mobile integration](https://docs.form0.dev/bindings/react-native/mobile-integration)
+- [React Native API reference](https://docs.form0.dev/bindings/react-native/api-reference)
 - [Expo mobile starter](https://github.com/paqu-io/form0-mobile-tmpl-react-native-expo)
 
 ## 🔒 Security

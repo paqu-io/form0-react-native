@@ -520,4 +520,10 @@ test('package types document snapshot and engine option contracts', () => {
     /forceShowNavigationPanel\?: boolean;/,
     'FormRenderer props should expose forceShowNavigationPanel in the package types'
   );
+
+  assert.equal(
+    packageTypesSource.match(/colorMode\?: 'light' \| 'dark' \| 'system';/g)?.length,
+    2,
+    'FormRenderer and ThemeProvider types should expose the runtime-supported system color mode'
+  );
 });
