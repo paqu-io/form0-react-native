@@ -10,14 +10,19 @@
   "module": "src/index.js",
   "types": "src/index.d.ts",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.0.0"
   },
   "files": [
-    "src"
+    "src",
+    "SECURITY.md"
   ],
   "scripts": {
     "build": "echo 'no build step yet'",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "package:check": "node scripts/check-package-contents.mjs",
+    "security:audit:prod": "npm audit --omit=dev --omit=peer --audit-level=high",
+    "check": "npm test",
+    "release:check": "npm run check && npm run security:audit:prod && npm run package:check"
   },
   "keywords": [
     "form0",

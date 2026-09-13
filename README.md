@@ -1,30 +1,88 @@
 # form0-react-native
 
 [![NPM Version](https://img.shields.io/npm/v/form0-react-native)](https://www.npmjs.com/package/form0-react-native)
-[![NPM Downloads](https://img.shields.io/npm/dt/form0-react-native)](https://www.npmjs.com/package/form0-react-native)
+[![NPM Downloads](https://img.shields.io/npm/dm/form0-react-native)](https://www.npmjs.com/package/form0-react-native)
+[![CI](https://github.com/paqu-io/form0-react-native/actions/workflows/ci.yml/badge.svg)](https://github.com/paqu-io/form0-react-native/actions/workflows/ci.yml)
 ![NPM License](https://img.shields.io/npm/l/form0-react-native)
 [![Docs](https://img.shields.io/badge/docs-docs.form0.dev-2563eb)](https://docs.form0.dev)
 [![Website](https://img.shields.io/badge/site-form0.dev-0f172a)](https://form0.dev)
 ![NPM Last Update](https://img.shields.io/npm/last-update/form0-react-native)
+[![Socket](https://socket.dev/api/badge/npm/package/form0-react-native)](https://socket.dev/npm/package/form0-react-native)
 
-> [!WARNING]
-> form0 is in active, very early development. Do not use in production. Expect breaking
-> changes and unstable behavior.
+> [!NOTE]
+> form0 is in active development and is available to use today. Its schema format and core
+> concepts are stable in practice, but releases before 1.0 may include breaking changes. Pin your
+> versions and review the release notes when upgrading. A formally stable release is coming.
 
-form0-react-native is the React Native UI layer of the [form0 ecosystem](https://form0.dev), wrapping the form0-core engine with React Native bindings and a lightweight set of default field renderers. It provides minimal, platform-native components that work on iOS and Android, allowing apps to layer their own design systems on top without rewriting engine integration code.
+`form0-react-native` is the React Native UI layer for the [form0 ecosystem](https://form0.dev). It
+combines `form0-core` with platform-native field renderers for iOS and Android while allowing an
+application to provide its own components, theme, media handling, and image resolution.
 
-## Parity tracker
+## 🚀 Start with the CLI
 
-The current parity roadmap and status live in [FORM0_REACT_PARITY.md](./FORM0_REACT_PARITY.md).
-Keep that file up to date whenever parity work lands.
+For a new project, install [`form0-cli`](https://github.com/paqu-io/form0-cli) and follow the
+[quickstart](https://docs.form0.dev/getting-started/quickstart). Choose the mobile application
+option to start from the maintained Expo template.
+
+Install `form0-react-native` directly when integrating it into an existing React Native project.
+
+## 📦 Installation
+
+```bash
+npm install form0-react-native
+```
+
+Install compatible versions of the package's React Native peer dependencies. In an Expo project,
+use `npx expo install` so Expo selects compatible native versions.
+
+## ⚡ Quick example
+
+```jsx
+import { FormRenderer } from "form0-react-native";
+
+const schema = {
+  form: {
+    name: "Inspection",
+    status_field: null,
+    elements: [
+      {
+        type: "TextField",
+        key: "site_name",
+        data_name: "site_name",
+        label: "Site name",
+        display: "default",
+        description: null,
+        description_mode: null,
+        required: true,
+        required_conditions: null,
+        visible: true,
+        visible_conditions: null,
+        read_only: false,
+        read_only_conditions: null,
+        default_value: null,
+        pattern: null,
+        pattern_description: null,
+        supporting_image: false,
+        supporting_image_path: null,
+        supporting_image_display: null,
+      },
+    ],
+  },
+};
+
+export function InspectionForm() {
+  return (
+    <FormRenderer schema={schema} onSubmit={(record) => console.log(record)} />
+  );
+}
+```
 
 ## Renderer overrides
 
-`FormRenderer` accepts a `renderers` prop so apps can replace or extend field components without forking the package.
+`FormRenderer` accepts a `renderers` prop so applications can replace or extend field components
+without forking the package:
 
 ```jsx
-import { FormRenderer } from 'form0-react-native';
-
 const renderers = {
   PhotoField: CustomPhotoField,
   VideoField: CustomVideoField,
@@ -33,35 +91,41 @@ const renderers = {
 <FormRenderer schema={schema} renderers={renderers} />;
 ```
 
-This is the preferred integration point for app-specific media capture, upload flows, and branding.
+> [!IMPORTANT] > `PhotoField` and `VideoField` use placeholder-backed defaults. Production applications should
+> provide renderers that own capture, storage, upload, and permission handling for those fields.
 
-`PhotoField` and `VideoField` are still intentionally override-driven. The package registers
-placeholder-backed defaults so schemas stay renderable, but production apps should provide their
-own renderers for those field types. `SignatureField` now has a built-in native renderer, and a
-consumer renderer can still override it the same way.
+`SignatureField` has a built-in native renderer and can also be overridden. The package includes a
+mobile navigation and validation sheet, repeatable-section drilldown, theme overrides, and an
+image resolver integration point.
 
-## Navigation panel
+## ✅ Requirements
 
-`FormRenderer` now includes a package-owned mobile navigation and validation sheet. On supported
-form screens, users can tap the existing header title to open it. The sheet shows section
-navigation and validation issues without adding extra header buttons.
+- Node.js 22 or newer
+- React 18 or 19
+- React Native 0.72 or newer
+- Compatible `lucide-react-native`, `react-native-svg`, and optional safe-area dependencies
 
-Use `forceShowNavigationPanel={true}` to keep the title-tap affordance available even when the
-current screen has no visible sections or validation issues yet.
+See the
+[React parity tracker](https://github.com/paqu-io/form0-react-native/blob/main/FORM0_REACT_PARITY.md)
+for current renderer coverage and planned work.
 
-## Repeatable sections
+## 📚 Documentation
 
-`RepeatableSection` already uses the package drilldown flow by default. The core package owns the repeatable state contract and nested save behavior, while product-specific styling and action wording should stay in the consuming app.
+- [Quickstart](https://docs.form0.dev/getting-started/quickstart)
+- [Full documentation](https://docs.form0.dev)
+- [Expo mobile starter](https://github.com/paqu-io/form0-mobile-tmpl-react-native-expo)
 
-## 🗂️ Documentation
+## 🔒 Security
 
-> [!WARNING]
-> 🚧 Work in progress...
+Schema expressions are evaluated by `form0-core`. Only use schemas from trusted authors and review
+the [form0-core security policy](https://github.com/paqu-io/form0-core/blob/main/SECURITY.md).
+Report vulnerabilities according to this repository's [security policy](./SECURITY.md).
 
-## Requirements
+## 🤝 Support and contributing
 
-- Node.js 20.19+
+See [SUPPORT.md](https://github.com/paqu-io/form0-react-native/blob/main/SUPPORT.md) for help and
+[CONTRIBUTING.md](https://github.com/paqu-io/form0-react-native/blob/main/CONTRIBUTING.md) to contribute.
 
-## Contributing
+## 📄 License
 
-Contributions are welcome! Please feel free to submit [issues](https://github.com/paqu-io/form0-react-native/issues) and [pull requests](https://github.com/paqu-io/form0-react-native/pulls).
+[MIT](./LICENSE)
