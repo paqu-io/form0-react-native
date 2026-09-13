@@ -130,7 +130,7 @@ export type FormRendererProps = {
   primaryActionLabel?: string;
   headerAccessory?: ReactNode;
   forceShowNavigationPanel?: boolean;
-  colorMode?: 'light' | 'dark';
+  colorMode?: 'light' | 'dark' | 'system';
   customTheme?: Record<string, any> | null;
   imageResolver?: ((path: string) => any) | null;
   engineOptions?: FormRendererEngineOptions;
@@ -140,7 +140,7 @@ export const FormRenderer: ComponentType<FormRendererProps>;
 export const FormHeader: ComponentType<Record<string, any>>;
 
 export const ThemeProvider: ComponentType<{
-  colorMode?: 'light' | 'dark';
+  colorMode?: 'light' | 'dark' | 'system';
   customTheme?: Record<string, any> | null;
   children?: ReactNode;
 }>;
