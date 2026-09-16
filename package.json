@@ -39,7 +39,7 @@
     "form-validation",
     "offline-first"
   ],
-  "author": "paqu.io <hello@paqu.io> (https://paqu.io/)",
+  "author": "paqu technologies <hello@paqu.io> (https://paqu.io/)",
   "contributors": [
     {
       "name": "aragornii"
@@ -47,7 +47,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "form0-core": "^0.2.1"
+    "form0-core": "^0.3.0"
   },
   "devDependencies": {
     "ignore": "^7.0.5"
