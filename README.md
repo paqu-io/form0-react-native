@@ -99,6 +99,19 @@ const renderers = {
 mobile navigation and validation sheet, repeatable-section drilldown, theme overrides, and an
 image resolver integration point.
 
+## Compatibility note for 0.3.0
+
+Repeatable-row editors no longer dispatch `load-record`, `edit-record`, or `change` automatically
+on their row engine. Earlier versions dispatched them when opening/editing a row or changing a row
+field. Automatic main-record dispatch is preserved: the root engine still receives `load-record`
+when ready, `edit-record` when entering edit mode, and `change` after a root field edit.
+
+If your application relied on the previous automatic row-engine dispatch, review its handlers before
+upgrading. Repeatable lifecycle events remain application-owned; this release does not introduce a
+new automatic repeatable-event contract. Portable lifecycle design remains tracked in core
+[#98](https://github.com/paqu-io/form0-core/issues/98) and
+[#102](https://github.com/paqu-io/form0-core/issues/102).
+
 ## ✅ Requirements
 
 - Node.js 22 or newer
