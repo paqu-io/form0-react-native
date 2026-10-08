@@ -27,3 +27,22 @@ after a fix or mitigation is available. Please keep the report private during th
 
 For ordinary usage questions, see
 [SUPPORT.md](https://github.com/paqu-io/form0-react-native/blob/main/SUPPORT.md).
+
+## Temporary development-tooling audit exception
+
+Approved on **8 October 2026**, expiring **7 November 2026 at 00:00 UTC**:
+[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), the high-severity
+braces 3.0.3 stack-exhaustion advisory, remains an **accepted temporary risk, not a patched
+dependency or a claim of non-exploitability**. The reviewed exposure is Node-side Metro file
+watching in the React Native peer/tooling graph, not form values. Consumer applications own their
+peer dependency locks; this library's lockfile does not remediate those applications.
+
+`security:audit:prod` is unchanged. `security:audit:all` still audits every dependency category
+and blocks every other high/critical advisory. Its narrow exception checks the advisory identity,
+severity, reviewed dependency edges, and peer-only lockfile paths; new paths or an escalation
+are not waived. Registry errors, malformed reports, and unknown audit formats fail closed.
+At the deadline, unresolved affected findings block again automatically. A clean audit continues
+to pass after expiry; there is no command-line/environment option to extend the deadline.
+
+The maintainer must review/remove the exception as soon as an upstream patch is available,
+and before the deadline. Do not extend it silently or disable the production/other-advisory gates.
