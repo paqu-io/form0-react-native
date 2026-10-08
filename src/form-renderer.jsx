@@ -3057,8 +3057,6 @@ function RepeatableEditorScreen({
     setRepeatableInstances,
     getRepeatableInstance,
     buildParentValues,
-    triggerEvent,
-    engineReadyVersion,
   } = useRepeatableInstanceEngine({
     schema,
     repInfo: screen.repInfo,
@@ -3076,8 +3074,6 @@ function RepeatableEditorScreen({
     values: initialInstance?.values || {},
     repeatable: initialInstance?.repeatable || {},
   });
-  const loadEventTriggeredRef = useRef(false);
-  const previousInteractionModeRef = useRef(null);
 
   const initialTimestampSeedValues = useMemo(
     () => ({
@@ -3175,41 +3171,11 @@ function RepeatableEditorScreen({
     fieldContainerRefs.current.clear();
     fieldInputRefs.current.clear();
     sectionContainerRefs.current.clear();
-    loadEventTriggeredRef.current = false;
-    previousInteractionModeRef.current = null;
     initialSnapshotRef.current = {
       values: cloneDeep(initialInstance?.values || {}),
       repeatable: cloneDeep(initialInstance?.repeatable || {}),
     };
   }, [initialInstance, screen.screenId]);
-
-  useEffect(() => {
-    loadEventTriggeredRef.current = false;
-    previousInteractionModeRef.current = null;
-  }, [engineReadyVersion]);
-
-  useEffect(() => {
-    if (!engineReadyVersion || loadEventTriggeredRef.current) {
-      return;
-    }
-
-    triggerEvent('load-record');
-    loadEventTriggeredRef.current = true;
-  }, [engineReadyVersion, triggerEvent]);
-
-  useEffect(() => {
-    if (!engineReadyVersion) {
-      return;
-    }
-
-    const interactionMode = readOnly ? 'readonly' : 'edit';
-    const previousMode = previousInteractionModeRef.current;
-    if (interactionMode === 'edit' && previousMode !== 'edit') {
-      triggerEvent('edit-record');
-    }
-
-    previousInteractionModeRef.current = interactionMode;
-  }, [engineReadyVersion, readOnly, triggerEvent]);
 
   const hasEntryChanges = useMemo(
     () =>
@@ -3224,14 +3190,9 @@ function RepeatableEditorScreen({
         return;
       }
 
-      const dataName = fieldDef.data_name;
-      applyValue(dataName, nextValue);
-      triggerEvent('change', dataName, {
-        value: nextValue,
-        field: fieldDef,
-      });
+      applyValue(fieldDef.data_name, nextValue);
     },
-    [setValue, triggerEvent]
+    [setValue]
   );
 
   const registerFieldContainer = useCallback((fieldName, node) => {

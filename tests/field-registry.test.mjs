@@ -22,6 +22,10 @@ const formRendererSource = readFileSync(
   new URL('../src/form-renderer.jsx', import.meta.url),
   'utf8'
 );
+const repeatableEditorSource = formRendererSource.slice(
+  formRendererSource.indexOf('function RepeatableEditorScreen('),
+  formRendererSource.indexOf('function RepeatableDiscardDialog(')
+);
 const formHeaderSource = readFileSync(new URL('../src/form-header.jsx', import.meta.url), 'utf8');
 const repeatableInstanceSource = readFileSync(
   new URL('../src/use-repeatable-instance.js', import.meta.url),
@@ -172,6 +176,24 @@ test('form renderer exposes parity-facing snapshot and engine APIs', () => {
     formRendererSource,
     /width:\s*'100%'/,
     'Native drilldown section cards should explicitly occupy the full available width'
+  );
+});
+
+test('repeatable row editors do not dispatch main-record or field events automatically', () => {
+  assert.doesNotMatch(
+    repeatableEditorSource,
+    /triggerEvent\('load-record'\)/,
+    'Opening a repeatable row must not re-run main-record load handlers'
+  );
+  assert.doesNotMatch(
+    repeatableEditorSource,
+    /triggerEvent\('edit-record'\)/,
+    'Editing a repeatable row must not re-run main-record edit handlers'
+  );
+  assert.doesNotMatch(
+    repeatableEditorSource,
+    /triggerEvent\('change'/,
+    'Repeatable row changes must not dispatch binding-specific events'
   );
 });
 
