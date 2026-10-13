@@ -73,17 +73,45 @@ export type FormRendererEngineOperation = Record<string, any> & {
   params?: Record<string, any>;
 };
 
+export type FormRendererDiagnosticInstancePath = {
+  repeatableKey: string;
+  instanceId: string | number | null;
+  index: number;
+  identity: 'id' | 'position';
+}[];
+
+export type FormRendererCalculationDiagnostic = {
+  code: string;
+  severity: 'error' | 'warning';
+  message: string;
+  fieldName: string;
+  phase?: string;
+  suggestion: string | null;
+  context: Record<string, unknown> & {
+    instancePath: FormRendererDiagnosticInstancePath;
+  };
+};
+
+export type FormRendererDiagnosticsMeta = {
+  scopeId: string;
+  instancePath: FormRendererDiagnosticInstancePath;
+  evaluationId: number;
+  kind: 'evaluation' | 'scope-ended';
+};
+
 export type FormRendererEngineOptions = {
+  diagnostics?: { console?: boolean };
+  onDiagnostics?: (
+    snapshot: FormRendererCalculationDiagnostic[],
+    meta: FormRendererDiagnosticsMeta
+  ) => void | Promise<void>;
   helpers?: Record<string, (...args: any[]) => unknown>;
   security?: unknown;
   onWarning?: (warning: unknown) => void;
   onOperations?: (
     operations: FormRendererEngineOperation[],
     meta: Record<string, any>,
-    fallback: (
-      operations: FormRendererEngineOperation[],
-      meta?: Record<string, any>,
-    ) => void,
+    fallback: (operations: FormRendererEngineOperation[], meta?: Record<string, any>) => void
   ) => void;
   onUpdate?: (state: Record<string, any>, engine: unknown) => void;
 };
@@ -104,16 +132,10 @@ export type FormRendererProps = {
   overrideValues?: Record<string, any>;
   onSubmit?: (
     structuredRecord: Record<string, any>,
-    meta?: FormRendererSubmitMeta,
+    meta?: FormRendererSubmitMeta
   ) => void | Promise<void>;
-  onSave?: (
-    snapshot: FormRendererSnapshot,
-    meta: FormRendererSaveMeta,
-  ) => void | Promise<void>;
-  onSnapshotChange?: (
-    snapshot: FormRendererSnapshot,
-    meta: FormRendererSnapshotChangeMeta,
-  ) => void;
+  onSave?: (snapshot: FormRendererSnapshot, meta: FormRendererSaveMeta) => void | Promise<void>;
+  onSnapshotChange?: (snapshot: FormRendererSnapshot, meta: FormRendererSnapshotChangeMeta) => void;
   fieldKeyMode?: 'prefer-key' | 'data-name';
   mode?: 'edit' | 'readonly';
   keyboardScrollOffset?: number;

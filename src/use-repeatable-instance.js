@@ -1,5 +1,5 @@
+import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createFormEngine } from 'form0-core';
 import {
   buildRepeatableInfo,
   cloneDeep,
@@ -42,19 +42,20 @@ export function useRepeatableInstanceEngine({
   repInfo,
   baseValues = {},
   initialInstance = {},
+  diagnosticInstancePath = [],
+  diagnosticsActive = true,
   options = {},
 }) {
   const [state, setState] = useState(() => createEmptyState(repInfo));
   const [engineReadyVersion, setEngineReadyVersion] = useState(0);
-  const [repeatableState, setRepeatableState] = useState(
-    () => cloneDeep(initialInstance?.repeatable || {})
+  const [repeatableState, setRepeatableState] = useState(() =>
+    cloneDeep(initialInstance?.repeatable || {})
   );
   const engineRef = useRef(null);
   const baseValuesRef = useRef(baseValues || {});
   const valuesRef = useRef(initialInstance?.values || {});
   const repeatableStateRef = useRef(cloneDeep(initialInstance?.repeatable || {}));
   const optionsRef = useRef(options || {});
-  const warningCleanupRef = useRef(null);
   const initialSeedSignature = useMemo(
     () => buildInstanceSeedSignature(initialInstance),
     [initialInstance]
@@ -81,6 +82,32 @@ export function useRepeatableInstanceEngine({
     return Array.from(repInfo.fields.keys());
   }, [repInfo]);
   const fieldNameSet = useMemo(() => new Set(fieldNames), [fieldNames]);
+  const diagnosticGeneration = useMemo(
+    () => ({}),
+    [
+      schema,
+      JSON.stringify(baseValues || {}),
+      JSON.stringify({
+        values: initialInstance?.values || {},
+        repeatable: initialInstance?.repeatable || {},
+        id: initialInstance?.id ?? initialInstance?.record_id ?? null,
+      }),
+      JSON.stringify(diagnosticInstancePath),
+    ]
+  );
+  const {
+    createEngine: createObservedEngine,
+    startScope,
+    endScope,
+    acceptWorkerDiagnostics,
+    forwardWarning,
+  } = useEngineDiagnostics(
+    options,
+    fieldNames,
+    diagnosticInstancePath,
+    diagnosticsActive,
+    diagnosticGeneration
+  );
 
   const reduceEngineState = useCallback(
     (engineState) => {
@@ -113,7 +140,7 @@ export function useRepeatableInstanceEngine({
         ...(baseValuesRef.current || {}),
         ...(instanceValues || {}),
       };
-      const engine = createFormEngine({
+      const engine = createObservedEngine({
         schema,
         initialValues: mergedValues,
         helpers: optionsRef.current.helpers,
@@ -122,7 +149,7 @@ export function useRepeatableInstanceEngine({
       engine.eval();
       return engine;
     },
-    [schema]
+    [schema, createObservedEngine]
   );
 
   const syncState = useCallback(
@@ -141,6 +168,7 @@ export function useRepeatableInstanceEngine({
   const rebuildEngine = useCallback(
     (instanceValues = valuesRef.current) => {
       if (!schema || !repInfo) {
+        endScope();
         engineRef.current = null;
         setState(createEmptyState(repInfo));
         return;
@@ -150,7 +178,7 @@ export function useRepeatableInstanceEngine({
       syncState(engine);
       setEngineReadyVersion((version) => version + 1);
     },
-    [buildEngine, repInfo, schema, syncState]
+    [buildEngine, repInfo, schema, syncState, endScope]
   );
 
   useEffect(() => {
@@ -225,7 +253,10 @@ export function useRepeatableInstanceEngine({
         if (type === 'FIELD_OPERATION' && operationName === 'SETVALUE') {
           const { fieldDataName, valueToSet } = params || {};
           if (typeof fieldDataName !== 'string' || fieldDataName.length === 0) {
-            console.warn('form0-react-native: SETVALUE operation missing fieldDataName.', operation);
+            console.warn(
+              'form0-react-native: SETVALUE operation missing fieldDataName.',
+              operation
+            );
             return;
           }
           pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
@@ -310,24 +341,18 @@ export function useRepeatableInstanceEngine({
     });
   }, []);
 
-  const getRepeatableInstances = useCallback(
-    (repeatableKey, parentPath = []) => {
-      return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
-    },
-    []
-  );
+  const getRepeatableInstances = useCallback((repeatableKey, parentPath = []) => {
+    return getRepeatableInstancesFromState(repeatableStateRef.current, repeatableKey, parentPath);
+  }, []);
 
-  const getRepeatableInstance = useCallback(
-    (repeatableKey, instanceId, parentPath = []) => {
-      return getRepeatableInstanceFromState(
-        repeatableStateRef.current,
-        repeatableKey,
-        instanceId,
-        parentPath
-      );
-    },
-    []
-  );
+  const getRepeatableInstance = useCallback((repeatableKey, instanceId, parentPath = []) => {
+    return getRepeatableInstanceFromState(
+      repeatableStateRef.current,
+      repeatableKey,
+      instanceId,
+      parentPath
+    );
+  }, []);
 
   const addRepeatableInstance = useCallback(
     (repeatableKey, { parentPath = [], seedValues = {}, instanceId } = {}) => {
@@ -352,7 +377,13 @@ export function useRepeatableInstanceEngine({
   const updateRepeatableInstance = useCallback(
     (repeatableKey, instanceId, updater, parentPath = []) => {
       setRepeatableSlice((draft) => {
-        return updateRepeatableInstanceInState(draft, repeatableKey, instanceId, updater, parentPath);
+        return updateRepeatableInstanceInState(
+          draft,
+          repeatableKey,
+          instanceId,
+          updater,
+          parentPath
+        );
       });
     },
     [setRepeatableSlice]
@@ -376,19 +407,16 @@ export function useRepeatableInstanceEngine({
     [setRepeatableSlice]
   );
 
-  const buildParentValuesForPath = useCallback(
-    (path = []) => {
-      return buildRepeatableParentValues({
-        seedValues: {
-          ...(baseValuesRef.current || {}),
-          ...(valuesRef.current || {}),
-        },
-        repeatableState: repeatableStateRef.current,
-        path,
-      });
-    },
-    []
-  );
+  const buildParentValuesForPath = useCallback((path = []) => {
+    return buildRepeatableParentValues({
+      seedValues: {
+        ...(baseValuesRef.current || {}),
+        ...(valuesRef.current || {}),
+      },
+      repeatableState: repeatableStateRef.current,
+      path,
+    });
+  }, []);
 
   useEffect(() => {
     const handler = optionsRef.current.onUpdate;
@@ -396,51 +424,6 @@ export function useRepeatableInstanceEngine({
       handler({ ...state }, engineRef.current);
     }
   }, [state]);
-
-  useEffect(() => {
-    if (warningCleanupRef.current) {
-      warningCleanupRef.current();
-      warningCleanupRef.current = null;
-    }
-
-    const warningHandler = optionsRef.current.onWarning;
-    if (typeof warningHandler !== 'function') {
-      return;
-    }
-
-    const warningSystem = engineRef.current?.getWarningSystem?.();
-    if (!warningSystem || typeof warningSystem.addWarningHandler !== 'function') {
-      return;
-    }
-
-    const proxy = (warning) => {
-      const latest = optionsRef.current.onWarning;
-      if (typeof latest === 'function') {
-        latest(warning);
-      }
-    };
-
-    warningSystem.addWarningHandler(proxy);
-    warningCleanupRef.current = () => warningSystem.removeWarningHandler(proxy);
-
-    return () => {
-      if (warningCleanupRef.current) {
-        warningCleanupRef.current();
-        warningCleanupRef.current = null;
-      } else {
-        warningSystem.removeWarningHandler(proxy);
-      }
-    };
-  }, [engineReadyVersion, options?.onWarning]);
-
-  useEffect(() => {
-    return () => {
-      if (warningCleanupRef.current) {
-        warningCleanupRef.current();
-        warningCleanupRef.current = null;
-      }
-    };
-  }, []);
 
   return {
     ...state,

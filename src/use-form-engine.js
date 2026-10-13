@@ -1,5 +1,7 @@
+import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createFormEngine, validateSchema } from 'form0-core';
+import { validateSchema } from 'form0-core';
+import { buildRepeatableInfo } from './utils/repeatable-manager.js';
 import { ensureKeys } from './utils/ensure-keys';
 
 const createEmptyState = () => ({
@@ -51,7 +53,6 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
   const initialValuesRef = useRef(initialValues || {});
   const overrideValuesRef = useRef(overrideValues || null);
   const optionsRef = useRef(options || {});
-  const warningCleanupRef = useRef(null);
   const initialValuesSignature = useMemo(
     () => JSON.stringify(initialValues || {}),
     [initialValues]
@@ -91,14 +92,32 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
     });
   }, []);
 
+  const diagnosticGeneration = useMemo(() => ({}), [preparedSchema, initialValuesSignature]);
+
+  const diagnosticFieldNames = useMemo(
+    () =>
+      [...buildRepeatableInfo(preparedSchema?.form?.elements || []).fieldOwnership]
+        .filter(([, info]) => info.parentPath.length === 0)
+        .map(([name]) => name),
+    [preparedSchema]
+  );
+  const {
+    createEngine: createObservedEngine,
+    startScope,
+    endScope,
+    acceptWorkerDiagnostics,
+    forwardWarning,
+  } = useEngineDiagnostics(options, diagnosticFieldNames, [], true, diagnosticGeneration);
+
   const rebuildEngine = useCallback(
     (seedValues = initialValuesRef.current) => {
       if (!preparedSchema) {
+        endScope();
         engineRef.current = null;
         setState(createEmptyState());
         return;
       }
-      const engine = createFormEngine({
+      const engine = createObservedEngine({
         schema: preparedSchema,
         initialValues: { ...(seedValues || {}) },
         helpers: optionsRef.current.helpers,
@@ -109,7 +128,7 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
       syncState();
       setEngineReadyVersion((version) => version + 1);
     },
-    [preparedSchema, syncState]
+    [preparedSchema, syncState, createObservedEngine, endScope]
   );
 
   useEffect(() => {
@@ -153,7 +172,10 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
         if (type === 'FIELD_OPERATION' && operationName === 'SETVALUE') {
           const { fieldDataName, valueToSet } = params || {};
           if (typeof fieldDataName !== 'string' || fieldDataName.length === 0) {
-            console.warn('form0-react-native: SETVALUE operation missing fieldDataName.', operation);
+            console.warn(
+              'form0-react-native: SETVALUE operation missing fieldDataName.',
+              operation
+            );
             return;
           }
           pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
@@ -250,51 +272,6 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
       handler({ ...state }, engineRef.current);
     }
   }, [state]);
-
-  useEffect(() => {
-    if (warningCleanupRef.current) {
-      warningCleanupRef.current();
-      warningCleanupRef.current = null;
-    }
-
-    const warningHandler = optionsRef.current.onWarning;
-    if (typeof warningHandler !== 'function') {
-      return;
-    }
-
-    const warningSystem = engineRef.current?.getWarningSystem?.();
-    if (!warningSystem || typeof warningSystem.addWarningHandler !== 'function') {
-      return;
-    }
-
-    const proxy = (warning) => {
-      const latest = optionsRef.current.onWarning;
-      if (typeof latest === 'function') {
-        latest(warning);
-      }
-    };
-
-    warningSystem.addWarningHandler(proxy);
-    warningCleanupRef.current = () => warningSystem.removeWarningHandler(proxy);
-
-    return () => {
-      if (warningCleanupRef.current) {
-        warningCleanupRef.current();
-        warningCleanupRef.current = null;
-      } else {
-        warningSystem.removeWarningHandler(proxy);
-      }
-    };
-  }, [engineReadyVersion, options?.onWarning]);
-
-  useEffect(() => {
-    return () => {
-      if (warningCleanupRef.current) {
-        warningCleanupRef.current();
-        warningCleanupRef.current = null;
-      }
-    };
-  }, []);
 
   return {
     ...state,
