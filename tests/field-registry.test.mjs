@@ -423,8 +423,8 @@ test('repeatable editor owns a mobile discard modal and validation navigation ho
 
   assert.match(
     formRendererSource,
-    /screen\.engineOptions\?\.onOperations/,
-    'Repeatable editors should reuse engineOptions while wrapping alert operations locally'
+    /engineOptions\?\.onOperations/,
+    'Repeatable editors should wrap current engineOptions alert operations locally'
   );
 });
 

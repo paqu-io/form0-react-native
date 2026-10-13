@@ -1,3 +1,4 @@
+import { buildDiagnosticInstancePath } from './utils/engine-diagnostics.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormEngine } from './use-form-engine';
 import { FieldRenderer } from './field-renderer';
@@ -1405,8 +1406,24 @@ export function FormRenderer({
     [pushRepeatableScreen, resolveRepeatableInfo]
   );
 
+  const diagnosticSeedSignature = JSON.stringify([
+    appliedRendererInitialValues || {},
+    initialSnapshotRepeatable || {},
+  ]);
+  const diagnosticGeneration = useMemo(() => ({}), [finalSchema, diagnosticSeedSignature]);
+
   const openRepeatableEditor = useCallback(
-    ({ field, controller, parentPath, repeatableKey, repInfo, instanceId, mode, draft }) => {
+    ({
+      field,
+      controller,
+      parentPath,
+      repeatableKey,
+      repInfo,
+      instanceId,
+      instanceIndex,
+      mode,
+      draft,
+    }) => {
       const frozenParentPath = Array.isArray(parentPath) ? cloneDeep(parentPath) : [];
       const resolvedInitialInstance =
         mode === 'edit'
@@ -1431,9 +1448,22 @@ export function FormRenderer({
         initialInstance: resolvedInitialInstance,
         parentValues: frozenParentValues,
         engineOptions,
+        diagnosticGeneration,
+        diagnosticInstancePath: buildDiagnosticInstancePath({
+          parentInstancePath: controller?.diagnosticInstancePath || [],
+          parentPath: frozenParentPath,
+          repeatableKey,
+          instance: resolvedInitialInstance,
+          index:
+            instanceIndex ??
+            controller
+              ?.getInstances?.(repeatableKey, frozenParentPath)
+              ?.findIndex((row) => row.id === instanceId) ??
+            0,
+        }),
       });
     },
-    [engineOptions, pushRepeatableScreen]
+    [engineOptions, pushRepeatableScreen, diagnosticGeneration]
   );
 
   const renderElements = useCallback(
@@ -2313,6 +2343,8 @@ export function FormRenderer({
           ) : (
             <RepeatableEditorScreen
               screen={screen}
+              engineOptions={engineOptions}
+              diagnosticsActive={screen.diagnosticGeneration === diagnosticGeneration}
               schema={finalSchema}
               onBack={popRepeatableScreen}
               onSave={handleRepeatableSave}
@@ -3004,6 +3036,8 @@ function RepeatableListScreen({
 
 function RepeatableEditorScreen({
   screen,
+  engineOptions,
+  diagnosticsActive,
   schema,
   onBack,
   onSave,
@@ -3031,14 +3065,14 @@ function RepeatableEditorScreen({
   );
   const baseValues = useMemo(() => cloneDeep(screen.parentValues || {}), [screen.screenId]);
   const { activeAlert, closeAlert, handleOperations } = useOperationAlertBridge(
-    screen.engineOptions?.onOperations
+    engineOptions?.onOperations
   );
   const effectiveEngineOptions = useMemo(
     () => ({
-      ...(screen.engineOptions || {}),
+      ...(engineOptions || {}),
       onOperations: handleOperations,
     }),
-    [handleOperations, screen.engineOptions]
+    [handleOperations, engineOptions]
   );
   const {
     values,
@@ -3063,6 +3097,8 @@ function RepeatableEditorScreen({
     baseValues,
     initialInstance: initialInstance || createEmptyRepeatableInstance(screen.repInfo),
     options: effectiveEngineOptions,
+    diagnosticInstancePath: screen.diagnosticInstancePath,
+    diagnosticsActive,
   });
   const titleDatasets = useMemo(() => buildTitleDatasetIndex(schema), [schema]);
   const entryTitle =
@@ -3095,6 +3131,7 @@ function RepeatableEditorScreen({
   const nestedRepeatableParentPath = useMemo(() => [], []);
   const controller = useMemo(
     () => ({
+      diagnosticInstancePath: screen.diagnosticInstancePath,
       repeatableMetadata,
       addInstance: addRepeatableInstance,
       updateInstance: updateRepeatableInstance,
@@ -3105,6 +3142,7 @@ function RepeatableEditorScreen({
       buildParentValues,
     }),
     [
+      screen.diagnosticInstancePath,
       addRepeatableInstance,
       buildParentValues,
       getRepeatableInstance,
