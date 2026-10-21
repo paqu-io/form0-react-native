@@ -19,6 +19,7 @@ export function FieldRenderer({
   labelWidthPercent = 30,
   onKeyDown,
   onFocus,
+  eventInteractions,
   inputRef,
   showError = true,
 }) {
@@ -181,7 +182,17 @@ export function FieldRenderer({
     name: field.data_name,
     readOnly,
     required,
-    onFocus,
+    onFocus: (event) => {
+      onFocus?.(event);
+      if (['TextField', 'NumericField'].includes(field.type))
+        eventInteractions?.('focus', field.data_name);
+    },
+    ...(eventInteractions && ['TextField', 'NumericField'].includes(field.type)
+      ? {
+          onBlur: () => eventInteractions('blur', field.data_name),
+          onPressIn: () => eventInteractions('click', field.data_name),
+        }
+      : {}),
     ref: inputRef,
   };
 
@@ -228,7 +239,10 @@ export function FieldRenderer({
               <Text
                 style={[
                   styles.modalTitle,
-                  { color: theme.color.foreground, fontSize: theme.fontSize.md || theme.fontSize.base },
+                  {
+                    color: theme.color.foreground,
+                    fontSize: theme.fontSize.md || theme.fontSize.base,
+                  },
                 ]}
               >
                 Field Information
@@ -310,7 +324,10 @@ export function FieldRenderer({
                 <Text
                   style={[
                     styles.modalTitle,
-                    { color: theme.color.foreground, fontSize: theme.fontSize.md || theme.fontSize.base },
+                    {
+                      color: theme.color.foreground,
+                      fontSize: theme.fontSize.md || theme.fontSize.base,
+                    },
                   ]}
                 >
                   Supporting Image

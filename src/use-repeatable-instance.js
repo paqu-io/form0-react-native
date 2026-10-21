@@ -1,3 +1,4 @@
+import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -101,6 +102,7 @@ export function useRepeatableInstanceEngine({
     endScope,
     acceptWorkerDiagnostics,
     forwardWarning,
+    getScope,
   } = useEngineDiagnostics(
     options,
     fieldNames,
@@ -421,12 +423,31 @@ export function useRepeatableInstanceEngine({
   useEffect(() => {
     const handler = optionsRef.current.onUpdate;
     if (typeof handler === 'function' && engineRef.current) {
-      handler({ ...state }, engineRef.current);
+      try {
+        const result = handler({ ...state }, engineRef.current);
+        if (result && typeof result.then === 'function') Promise.resolve(result).catch(() => {});
+      } catch {
+        /* State observers cannot interrupt editor operations. */
+      }
     }
   }, [state]);
 
+  const getEventBinding = useCallback(
+    () =>
+      createEventEngineBinding({
+        getEngine: () => engineRef.current,
+        getScope,
+        endScope,
+        getOptions: () => optionsRef.current,
+        applyDefault: defaultProcessOperations,
+        reduceState: reduceEngineState,
+      }),
+    [getScope, endScope, defaultProcessOperations, reduceEngineState]
+  );
+
   return {
     ...state,
+    getEventBinding,
     setValue,
     setValues,
     submit: () => cloneDeep(state.values),

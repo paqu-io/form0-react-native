@@ -1,3 +1,5 @@
+import { useEventSession, useManagedEventScope } from './use-managed-events.js';
+import { mergeCustomValidation, repeatableChangeMetadata } from './utils/managed-events.js';
 import { buildDiagnosticInstancePath } from './utils/engine-diagnostics.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormEngine } from './use-form-engine';
@@ -657,6 +659,35 @@ function useOperationAlertBridge(externalOnOperations) {
         return;
       }
 
+      if (meta.scopeId) {
+        return (async () => {
+          let batch = [];
+          const flush = async () => {
+            if (!batch.length) return;
+            const selected = batch;
+            batch = [];
+            await (externalOnOperations
+              ? externalOnOperations(selected, meta, fallback)
+              : fallback(selected, meta));
+          };
+          for (const operation of operations) {
+            if (operation?.type === 'UI_OPERATION' && operation.operation === 'ALERT') {
+              await flush();
+              nextAlertIdRef.current += 1;
+              setAlertQueue((previous) => [
+                ...previous,
+                {
+                  id: `operation-alert-${nextAlertIdRef.current}`,
+                  title: String(operation.params?.title ?? ''),
+                  message: String(operation.params?.message ?? ''),
+                },
+              ]);
+            } else batch.push(operation);
+          }
+          await flush();
+        })();
+      }
+
       let passthroughOperations = [];
       const flushPassthroughOperations = () => {
         if (passthroughOperations.length === 0) {
@@ -779,6 +810,12 @@ export function FormRenderer({
   const { activeAlert, closeAlert, handleOperations } = useOperationAlertBridge(
     engineOptions?.onOperations
   );
+  const { session: eventSession, announce: announceEventController } = useEventSession(
+    engineOptions,
+    schema
+  );
+  const eventDispatchRef = useRef(null);
+  const managedSaveBusyRef = useRef(false);
   const effectiveEngineOptions = useMemo(
     () => ({
       ...(engineOptions || {}),
@@ -797,6 +834,7 @@ export function FormRenderer({
     schema: finalSchema,
     triggerEvent,
     engineReadyVersion,
+    getEventBinding,
   } = useFormEngine(schema, appliedRendererInitialValues, overrideValues, effectiveEngineOptions);
   const [submitCount, setSubmitCount] = useState(0);
   const [repeatableState, setRepeatableState] = useState(appliedRepeatableSeed);
@@ -982,7 +1020,7 @@ export function FormRenderer({
   }, [engineReadyVersion]);
 
   useEffect(() => {
-    if (!engineReadyVersion || loadEventTriggeredRef.current) {
+    if (eventSession.config.lifecycle || !engineReadyVersion || loadEventTriggeredRef.current) {
       return;
     }
 
@@ -995,6 +1033,7 @@ export function FormRenderer({
       return;
     }
 
+    if (eventSession.config.lifecycle) return;
     const previousMode = previousInteractionModeRef.current;
     const enteringEditMode = interactionMode === 'edit' && previousMode !== 'edit';
     if (enteringEditMode) {
@@ -1187,9 +1226,70 @@ export function FormRenderer({
     [errors, required, statusFieldName, statusValue, validatableRootFields, values, visible]
   );
 
+  const rootEvents = useManagedEventScope({
+    session: eventSession,
+    announce: announceEventController,
+    getBinding: getEventBinding,
+    mode: interactionMode,
+    recordKind: eventSession.config.recordKind,
+    data: repeatableState,
+    initialEventValues: statusFieldName ? { [statusFieldName]: statusValue } : undefined,
+    validate: (state) =>
+      buildValidationSummary(validatableRootFields, {
+        getValue: (field) =>
+          field.data_name === statusFieldName
+            ? (state.values[statusFieldName] ?? statusValue)
+            : state.values[field.data_name],
+        isVisible: (field) => state.visible[field.data_name] !== false,
+        isRequired: (field) => Boolean(state.required[field.data_name]),
+        getError: (field) => state.errors[field.data_name],
+      }),
+    serialize: (state, intent, validationSummary) => {
+      const now = new Date().toISOString();
+      touchUpdatedAt(now);
+      const timestampSnapshot = buildSubmissionTimestampSnapshot(timestampsRef.current, now);
+      const rawValues = buildSubmissionRawValues({
+        values: state.values,
+        timestampSnapshot,
+        statusFieldName,
+        statusValue:
+          statusFieldName && Object.prototype.hasOwnProperty.call(state.values, statusFieldName)
+            ? state.values[statusFieldName]
+            : statusValue,
+      });
+      const currentRepeatable = cloneDeep(repeatableState);
+      if (intent === 'draft')
+        return {
+          payload: {
+            raw_values: rawValues,
+            repeatable: currentRepeatable,
+            timestamps: timestampSnapshot,
+          },
+          meta: { validationSummary, dirty: hasChanges },
+        };
+      const submission = buildStructuredSubmission({
+        schema: finalSchema,
+        values: rawValues,
+        repeatable: currentRepeatable,
+        fieldKeyMode,
+        timestamps: timestampSnapshot,
+      });
+      return {
+        payload: submission.structuredRecord,
+        meta: {
+          repeatable: submission.repeatable,
+          rawValues: submission.rawValues,
+          validationSummary,
+          timestamps: submission.timestamps,
+        },
+      };
+    },
+  });
+  eventDispatchRef.current = rootEvents;
+
   const rootValidationSummary = useMemo(
-    () => buildRootValidationSummary(),
-    [buildRootValidationSummary]
+    () => mergeCustomValidation(buildRootValidationSummary(), rootEvents.findings),
+    [buildRootValidationSummary, rootEvents.findings]
   );
   const showRootValidationList = submitCount > 0 && rootValidationSummary?.hasErrors;
   const rootNavigationIssues = useMemo(
@@ -1201,19 +1301,27 @@ export function FormRenderer({
 
   const handleRootFieldValueChange = useCallback(
     (fieldDef, nextValue, applyValue = setValue) => {
-      if (!fieldDef?.data_name) {
-        return;
-      }
-
+      if (!fieldDef?.data_name) return;
       const dataName = fieldDef.data_name;
-      applyValue(dataName, nextValue);
       markRootDirty();
-      triggerEvent('change', dataName, {
-        value: nextValue,
-        field: fieldDef,
-      });
+      const update = () => {
+        applyValue(dataName, nextValue);
+        if (eventSession.config.lifecycle && fieldDef.type === 'StatusField')
+          setValue(dataName, nextValue);
+      };
+      if (eventSession.config.lifecycle)
+        eventDispatchRef.current.change(
+          fieldDef.type === 'StatusField' ? 'change-status' : 'change',
+          dataName,
+          { value: nextValue, field: fieldDef },
+          update
+        );
+      else {
+        update();
+        triggerEvent('change', dataName, { value: nextValue, field: fieldDef });
+      }
     },
-    [markRootDirty, setValue, triggerEvent]
+    [markRootDirty, setValue, triggerEvent, eventSession]
   );
 
   const getRepeatableInstances = useCallback((repeatableKey, parentPath = []) => {
@@ -1299,6 +1407,8 @@ export function FormRenderer({
   const formRepeatableController = useMemo(
     () => ({
       repeatableMetadata,
+      eventDispatch: (...args) => eventDispatchRef.current?.dispatch(...args),
+      eventInteraction: (...args) => eventDispatchRef.current?.interaction(...args),
       addInstance: addRepeatableInstance,
       updateInstance: updateRepeatableInstance,
       removeInstance: removeRepeatableInstance,
@@ -2000,6 +2110,7 @@ export function FormRenderer({
               labelPosition={labelPosition}
               labelWidthPercent={labelWidthPercent}
               onFocus={onFieldFocus}
+              eventInteractions={controller?.eventInteraction}
               inputRef={
                 dataName && typeof registerFieldInput === 'function'
                   ? (node) => registerFieldInput(dataName, node)
@@ -2045,6 +2156,11 @@ export function FormRenderer({
         ? 'Save'
         : 'Submit';
 
+  const cancelRoot = useCallback(async () => {
+    const result = await rootEvents.close(true);
+    if (result.status === 'completed') onRequestClose?.({ reason: 'cancel' });
+  }, [rootEvents.close, onRequestClose]);
+
   // Request cancel with discard confirmation if there are changes
   const requestCancel = useCallback(() => {
     if (typeof onRequestClose !== 'function') {
@@ -2057,18 +2173,36 @@ export function FormRenderer({
         {
           text: 'Discard',
           style: 'destructive',
-          onPress: () => onRequestClose({ reason: 'cancel' }),
+          onPress: cancelRoot,
         },
       ]);
     } else {
-      onRequestClose({ reason: 'cancel' });
+      cancelRoot();
     }
-  }, [hasChanges, onRequestClose]);
+  }, [hasChanges, onRequestClose, cancelRoot]);
 
   // Handle form submission
-  const handleFormSubmit = useCallback(() => {
+  const handleFormSubmit = useCallback(async () => {
     setSubmitCount((count) => count + 1);
 
+    if (rootEvents.lifecycle) {
+      if (managedSaveBusyRef.current) return;
+      managedSaveBusyRef.current = true;
+      try {
+        const prepared = await rootEvents.prepare('submit');
+        if (!prepared.eligible || !onSubmit) {
+          if (prepared.validationSummary?.hasErrors)
+            navigateToRootValidationIssue(getFirstValidationIssue(prepared.validationSummary));
+          return;
+        }
+        await onSubmit(prepared.payload, prepared.meta);
+      } catch {
+        /* Keep the editor available for retry. */
+      } finally {
+        managedSaveBusyRef.current = false;
+      }
+      return;
+    }
     const validationSummary = rootValidationSummary;
     if (validationSummary?.hasErrors || !onSubmit) {
       if (validationSummary?.hasErrors) {
@@ -2101,17 +2235,32 @@ export function FormRenderer({
     navigateToRootValidationIssue,
     onSubmit,
     rootValidationSummary,
+    rootEvents.lifecycle,
+    rootEvents.prepare,
     submit,
     timestampsRef,
     touchUpdatedAt,
   ]);
 
-  const handleFormSave = useCallback(() => {
+  const handleFormSave = useCallback(async () => {
     if (!onSave) {
       return;
     }
 
     setSubmitCount((count) => count + 1);
+    if (rootEvents.lifecycle) {
+      if (managedSaveBusyRef.current) return;
+      managedSaveBusyRef.current = true;
+      try {
+        const prepared = await rootEvents.prepare('draft');
+        if (prepared.eligible) await onSave(prepared.payload, prepared.meta);
+      } catch {
+        /* Persistence remains application-owned. */
+      } finally {
+        managedSaveBusyRef.current = false;
+      }
+      return;
+    }
     const savedAt = new Date().toISOString();
     touchUpdatedAt(savedAt);
     const timestampSnapshot = buildSubmissionTimestampSnapshot(timestampsRef.current, savedAt);
@@ -2132,6 +2281,8 @@ export function FormRenderer({
     });
   }, [
     hasChanges,
+    rootEvents.lifecycle,
+    rootEvents.prepare,
     onSave,
     rootValidationSummary,
     statusFieldName,
@@ -2154,7 +2305,7 @@ export function FormRenderer({
   );
 
   const handleRepeatableSave = useCallback(
-    (screen, payload) => {
+    async (screen, payload, beforeClose) => {
       if (!screen?.controller) {
         return;
       }
@@ -2189,16 +2340,30 @@ export function FormRenderer({
           screen.controller.setInstances(repeatableKey, [...existing, payload], parentPath);
         }
       }
+      if (eventSession.config.lifecycle)
+        screen.controller.eventDispatch?.(
+          'change',
+          repeatableChangeMetadata(
+            screen.controller,
+            repeatableKey,
+            payload.id,
+            parentPath,
+            saveMode === 'edit' ? 'edit' : 'add',
+            screen.instanceIndex
+          ),
+          screen.field?.data_name
+        );
       markRootDirty();
       touchUpdatedAt();
+      if (beforeClose && (await beforeClose()).status !== 'completed') return;
       popRepeatableScreen();
     },
-    [markRootDirty, popRepeatableScreen, touchUpdatedAt]
+    [markRootDirty, popRepeatableScreen, touchUpdatedAt, eventSession]
   );
 
   const requestRepeatableRemoval = useCallback(
     (screen, instanceId) => {
-      if (!screen?.controller || !instanceId) {
+      if (!screen?.controller || instanceId == null) {
         return;
       }
       const instance = screen.controller.getInstance?.(
@@ -2215,6 +2380,8 @@ export function FormRenderer({
         repeatableKey: screen.repeatableKey,
         parentPath: screen.parentPath,
         instanceId,
+        fieldName: screen.field?.data_name,
+        instanceIndex: index,
         entryTitle: getRepeatableEntryTitle(screen.field, instance, Math.max(index, 0)),
       });
     },
@@ -2250,10 +2417,26 @@ export function FormRenderer({
       );
     }
 
+    if (eventSession.config.lifecycle) {
+      const { controller, repeatableKey, instanceId, parentPath, fieldName, instanceIndex } =
+        pendingRepeatableRemoval;
+      controller.eventDispatch?.(
+        'change',
+        repeatableChangeMetadata(
+          controller,
+          repeatableKey,
+          instanceId,
+          parentPath,
+          'remove',
+          instanceIndex
+        ),
+        fieldName
+      );
+    }
     markRootDirty();
     touchUpdatedAt();
     setPendingRepeatableRemoval(null);
-  }, [markRootDirty, pendingRepeatableRemoval, touchUpdatedAt]);
+  }, [markRootDirty, pendingRepeatableRemoval, touchUpdatedAt, eventSession]);
 
   const formName =
     resolveDatasetRowTitle(titleDatasets.root, values) || finalSchema?.form?.name || null;
@@ -2344,6 +2527,7 @@ export function FormRenderer({
             <RepeatableEditorScreen
               screen={screen}
               engineOptions={engineOptions}
+              eventSession={eventSession}
               diagnosticsActive={screen.diagnosticGeneration === diagnosticGeneration}
               schema={finalSchema}
               onBack={popRepeatableScreen}
@@ -3037,6 +3221,7 @@ function RepeatableListScreen({
 function RepeatableEditorScreen({
   screen,
   engineOptions,
+  eventSession,
   diagnosticsActive,
   schema,
   onBack,
@@ -3080,7 +3265,8 @@ function RepeatableEditorScreen({
     required,
     read_only,
     errors,
-    setValue,
+    setValue: setRawValue,
+    getEventBinding,
     submit,
     repeatable,
     repeatableMetadata,
@@ -3127,11 +3313,22 @@ function RepeatableEditorScreen({
     values,
   });
 
-  const instanceId = initialInstance?.id || screen.instanceId;
+  const instanceId = initialInstance?.id ?? screen.instanceId;
   const nestedRepeatableParentPath = useMemo(() => [], []);
+  const rowDispatchRef = useRef(null);
+  const setValue = useCallback(
+    (name, value) => {
+      if (rowDispatchRef.current?.lifecycle)
+        rowDispatchRef.current.change('change', name, { value }, () => setRawValue(name, value));
+      else setRawValue(name, value);
+    },
+    [setRawValue]
+  );
   const controller = useMemo(
     () => ({
       diagnosticInstancePath: screen.diagnosticInstancePath,
+      eventDispatch: (...args) => rowDispatchRef.current?.dispatch(...args),
+      eventInteraction: (...args) => rowDispatchRef.current?.interaction(...args),
       repeatableMetadata,
       addInstance: addRepeatableInstance,
       updateInstance: updateRepeatableInstance,
@@ -3389,9 +3586,45 @@ function RepeatableEditorScreen({
       }),
     [errors, required, validationFields, values, visible]
   );
+  const rowEvents = useManagedEventScope({
+    session: eventSession,
+    getBinding: getEventBinding,
+    mode: readOnly ? 'readonly' : 'edit',
+    recordKind: screen.mode === 'create' ? 'new' : 'existing',
+    fieldKey: screen.repInfo?.field?.data_name,
+    active: diagnosticsActive,
+    data: repeatable,
+    validate: (state) =>
+      buildValidationSummary(validationFields, {
+        getValue: (field) => state.values[field.data_name],
+        isVisible: (field) => state.visible[field.data_name] !== false,
+        isRequired: (field) => Boolean(state.required[field.data_name]),
+        getError: (field) => state.errors[field.data_name],
+      }),
+    serialize: (state) => {
+      const now = new Date().toISOString();
+      touchUpdatedAt(now);
+      const timestamps = buildSubmissionTimestampSnapshot(timestampsRef.current, now);
+      return {
+        payload: {
+          ...(initialInstance || {}),
+          id: instanceId,
+          values: cloneDeep(state.values),
+          repeatable: cloneDeep(repeatable),
+          ...timestamps,
+        },
+      };
+    },
+  });
+  rowDispatchRef.current = rowEvents;
+  const cancelEntry = useCallback(async () => {
+    const result = await rowEvents.close(true);
+    if (result.status === 'completed') onBack();
+  }, [rowEvents.close, onBack]);
+
   const entryValidationSummary = useMemo(
-    () => buildEntryValidationSummary(),
-    [buildEntryValidationSummary]
+    () => mergeCustomValidation(buildEntryValidationSummary(), rowEvents.findings),
+    [buildEntryValidationSummary, rowEvents.findings]
   );
   const showEntryValidationList = submitCount > 0 && entryValidationSummary?.hasErrors;
   const entryNavigationIssues = useMemo(
@@ -3406,7 +3639,16 @@ function RepeatableEditorScreen({
   const canOpenNavigationSheet =
     forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || showEntryValidationList;
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (rowEvents.lifecycle) {
+      setSubmitCount((count) => count + 1);
+      const closeTarget = rowEvents.captureClose();
+      const prepared = await rowEvents.prepare('submit');
+      if (prepared.eligible) await onSave(screen, prepared.payload, closeTarget);
+      else if (prepared.validationSummary?.hasErrors)
+        navigateToValidationIssue(getFirstValidationIssue(prepared.validationSummary));
+      return;
+    }
     if (validateBeforeSave) {
       setSubmitCount((count) => count + 1);
       const validationSummary = entryValidationSummary;
@@ -3433,11 +3675,11 @@ function RepeatableEditorScreen({
       return;
     }
     if (!hasEntryChanges) {
-      onBack();
+      cancelEntry();
       return;
     }
     setDiscardDialogVisible(true);
-  }, [activeDrilldownPath.length, hasEntryChanges, onBack, popEditorDrilldownLevel]);
+  }, [activeDrilldownPath.length, hasEntryChanges, cancelEntry, popEditorDrilldownLevel]);
 
   const leftAction =
     activeDrilldownPath.length > 0
@@ -3535,7 +3777,7 @@ function RepeatableEditorScreen({
         onKeepEditing={() => setDiscardDialogVisible(false)}
         onDiscard={() => {
           setDiscardDialogVisible(false);
-          onBack();
+          cancelEntry();
         }}
       />
     </View>

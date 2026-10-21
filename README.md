@@ -105,8 +105,8 @@ field. Automatic main-record dispatch is preserved: the root engine still receiv
 when ready, `edit-record` when entering edit mode, and `change` after a root field edit.
 
 If your application relied on the previous automatic row-engine dispatch, review its handlers before
-upgrading. Repeatable lifecycle events remain application-owned; this release does not introduce a
-new automatic repeatable-event contract. Portable lifecycle design remains tracked in core
+upgrading. This remains the default behavior when `engineOptions.events.lifecycle` is disabled.
+Enable the opt-in integration described below for the portable repeatable-event contract tracked in core
 [#98](https://github.com/paqu-io/form0-core/issues/98) and
 [#102](https://github.com/paqu-io/form0-core/issues/102).
 
@@ -177,3 +177,99 @@ Closing/deleting an editor, replacing its engine/schema, or unmounting retires t
 Calculation diagnostics remain outside `state.errors`, saved snapshots and record payloads. They do not change validation display timing, submission decisions or draft saving, and do not create automatic alerts or a diagnostics panel.
 
 `onOperations(operations, meta, applyDefault)` receives non-alert operations. Delegate selected operations with `applyDefault(selected, meta)`; without a callback, existing default processing remains active. Renderer-owned `ALERT` dialogs appear once. Operation batches follow the existing platform processing; callbacks must handle every supplied batch. `onWarning` remains the legacy warning route, including its existing throttling, and is not a replacement for diagnostic snapshots. `onUpdate(state, engine)` retains the execution-specific engine/facade argument; use `onDiagnostics` for portable diagnostic consumption.
+
+## Managed events and save preparation
+
+The managed event integration uses **form0-core 0.5.1 or later**. Expanded automatic lifecycle
+behavior is opt-in. Without it, the existing root load/edit/change behavior remains available.
+
+```jsx
+<FormRenderer
+  schema={schema}
+  engineOptions={{
+    events: {
+      lifecycle: true,
+      recordKind: 'existing', // explicitly 'new' or 'existing'; never inferred from values
+      fieldInteractions: ['focus', 'blur'],
+    },
+    onEventController: (controller) => {
+      controllerRef.current = controller;
+    },
+  }}
+/>
+```
+
+`onEventController(controller | null)` receives the current engine generation after initialization.
+Callbacks can be replaced while editors are open. Lifecycle settings and record classification are
+fixed for the editor session; remount to replace them, helpers or security configuration. Observer
+exceptions and rejected promises are isolated.
+
+Both controller methods return promises in every execution mode:
+
+```js
+const detail = await controller.dispatch({
+  type: 'validate-record',
+  metadata: { isDraft: false, isValid: true },
+});
+// { status: 'completed' | 'failed', operations, validationIssues, issues }
+
+const prepared = await controller.prepareSave({ intent: 'submit' });
+if (prepared.eligible) await persistRecord(prepared.payload, prepared.meta);
+// prepareSave never persists, reports persistence success, or closes an editor.
+```
+
+`prepareSave` waits for accepted updates, validates, runs the pre-save hook once when policy permits,
+awaits delegated operations, revalidates if editable values changed, then serializes that same final
+snapshot. Built-in actions use this path when lifecycle integration is enabled; application buttons
+can use the controller directly. Requests are serialized; concurrent preparation for the same scope
+returns `save_in_progress`. Applications own deduplication of their subsequent persistence requests.
+A failure returns `eligible: false`, `payload: null` and structured `issues`, preserving editable
+values for correction. Normal submit and row acceptance respect validation failures. Root draft
+preparation (`intent: 'draft'`) remains allowed with `validationSummary.hasErrors: true`; row drafts
+are unsupported. Root submit returns the structured record, root draft the existing raw snapshot,
+and row preparation the existing row shape. `meta` retains submission/draft metadata.
+
+```js
+ON('validate-record', function (event) {
+  if ($amount < 4) INVALID('Amount must be at least four.');
+});
+ON('save-record', function (event) {
+  SETVALUE('note', event.isDraft ? 'Draft reviewed' : 'Ready');
+});
+```
+
+`INVALID(nonemptyMessage)` is synchronous and validation-only. Findings are scope-level messages in
+the existing validation summary/navigation; they have no invented field association and never enter
+intrinsic `state.errors`, calculation diagnostics, saved values or record/media metadata. Every
+validation attempt replaces custom findings; editable changes or scope retirement clear them.
+Validation and cancel/unload handlers reject value/UI operations and promises. `isDraft` describes
+the current attempted action; `isValid` describes intrinsic validity, with combined validity in the
+returned summary. Calculation diagnostics alone never block saving.
+
+Opt-in opening evaluates effective values, runs load, then new/edit when entering editing; readonly
+opening runs load only. Rows use their actual new/existing classification and repeatable events.
+User field edits notify change after updates settle; accepted row membership changes carry `action`
+(`add`, `edit`, `remove`) and `affectedInstancePath` on the owning repeatable listener. Enabled status
+fields notify `change-status` for user changes only. Defaults, SETVALUE and calculations emit no
+additional automatic change. Extra focus/blur/click interactions default to none; the built-in text
+and numeric inputs support them (Native click means input press). Other/custom controls may dispatch
+supported interactions explicitly from their own event handlers.
+
+For a row request, supply `instancePath` or the active `scopeId` from diagnostics metadata. Full paths
+use schema keys and existing row IDs, with explicit positional fallback; positional paths require
+that observed active `scopeId`. Old controllers, closed/deleted editors and obsolete generations are
+rejected. Open row handlers may read current main/ancestor values but SETVALUE writes only within
+that row. Collections and closed-row freshness/aggregation remain outside this contract.
+
+Confirmed renderer cancellation sends cancel then unload; supported successful close paths send
+unload before releasing the engine. Host-owned closing must dispatch unload before unmounting.
+Forced disposal, resets, rerenders and Strict Mode cleanup only retire scopes. `save-record` and
+`save-repeatable` are pre-save hooks; there are no saved-\* schema events. The application owns
+persistence, success notifications and closing. Async `onOperations` work is awaited; its selective
+`applyDefault` callback is valid only during that dispatch. Renderer alerts remain owned by the
+binding and are delivered once.
+
+Native File/Blob media handles retain standard metadata and immutable binary content. Custom properties
+on these handles are outside native serialization; attach custom metadata to the surrounding plain
+record object. Async schema handlers remain unsupported. The form0-core 0.5.1 minimum includes
+the media compatibility correction.
