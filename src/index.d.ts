@@ -46,6 +46,8 @@ export type FormRendererValidationIssue = {
   field?: Form0Field | null;
   fieldName?: string | null;
   message?: string | null;
+  kind?: string;
+  instancePath?: FormRendererDiagnosticInstancePath;
 };
 
 export type FormRendererValidationSummary = {
@@ -99,7 +101,61 @@ export type FormRendererDiagnosticsMeta = {
   kind: 'evaluation' | 'scope-ended';
 };
 
+export type FormRendererEventRequest = {
+  type: string;
+  fieldKey?: string;
+  instancePath?: FormRendererDiagnosticInstancePath;
+  scopeId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type FormRendererEventIssue = {
+  code: string;
+  message: string;
+  eventType?: string | null;
+  instancePath: FormRendererDiagnosticInstancePath;
+};
+
+export type FormRendererEventResult = {
+  status: 'completed' | 'failed';
+  operations: FormRendererEngineOperation[];
+  validationIssues: { message: string; instancePath: FormRendererDiagnosticInstancePath }[];
+  issues: FormRendererEventIssue[];
+};
+
+export type FormRendererSavePreparation = {
+  status: 'completed' | 'failed';
+  eligible: boolean;
+  payload: Record<string, unknown> | null;
+  meta?: Record<string, unknown>;
+  validationSummary?: FormRendererValidationSummary;
+  issues: FormRendererEventIssue[];
+};
+
+export type FormRendererEventController = {
+  dispatch: (request: FormRendererEventRequest) => Promise<FormRendererEventResult>;
+  prepareSave: (request: {
+    intent: 'submit' | 'draft';
+    instancePath?: FormRendererDiagnosticInstancePath;
+    scopeId?: string;
+  }) => Promise<FormRendererSavePreparation>;
+};
+
+export type FormRendererEventOptions =
+  | {
+      lifecycle: boolean;
+      recordKind: 'new' | 'existing';
+      fieldInteractions?: ('focus' | 'blur' | 'click')[];
+    }
+  | {
+      lifecycle?: false;
+      recordKind?: 'new' | 'existing';
+      fieldInteractions?: ('focus' | 'blur' | 'click')[];
+    };
+
 export type FormRendererEngineOptions = {
+  events?: FormRendererEventOptions;
+  onEventController?: (controller: FormRendererEventController | null) => void | Promise<void>;
   diagnostics?: { console?: boolean };
   onDiagnostics?: (
     snapshot: FormRendererCalculationDiagnostic[],
@@ -111,8 +167,11 @@ export type FormRendererEngineOptions = {
   onOperations?: (
     operations: FormRendererEngineOperation[],
     meta: Record<string, any>,
-    fallback: (operations: FormRendererEngineOperation[], meta?: Record<string, any>) => void
-  ) => void;
+    fallback: (
+      operations: FormRendererEngineOperation[],
+      meta?: Record<string, any>
+    ) => void | Promise<void>
+  ) => void | Promise<void>;
   onUpdate?: (state: Record<string, any>, engine: unknown) => void;
 };
 

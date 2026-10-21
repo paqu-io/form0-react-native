@@ -48,6 +48,7 @@ export function useEngineDiagnostics(
       try {
         return createDiagnosticEngine({
           ...config,
+          eventScope: { scopeId: scope.scopeId, instancePath: attributionRef.current.instancePath },
           helpers: optionsRef.current.helpers,
           security: optionsRef.current.security,
           onWarning: (warning) =>
@@ -72,6 +73,13 @@ export function useEngineDiagnostics(
       scopeRef.current?.isActive?.() ? optionsRef.current.onWarning?.(warning) : undefined,
     []
   );
+  const getScope = useCallback(
+    () =>
+      scopeRef.current?.isActive?.()
+        ? { scopeId: scopeRef.current.scopeId, instancePath: attributionRef.current.instancePath }
+        : null,
+    []
+  );
   useEffect(() => endScope, [endScope]);
   return {
     createEngine,
@@ -79,5 +87,6 @@ export function useEngineDiagnostics(
     endScope,
     acceptWorkerDiagnostics,
     forwardWarning,
+    getScope,
   };
 }

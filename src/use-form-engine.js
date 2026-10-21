@@ -1,3 +1,4 @@
+import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateSchema } from 'form0-core';
@@ -107,6 +108,7 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
     endScope,
     acceptWorkerDiagnostics,
     forwardWarning,
+    getScope,
   } = useEngineDiagnostics(options, diagnosticFieldNames, [], true, diagnosticGeneration);
 
   const rebuildEngine = useCallback(
@@ -269,12 +271,33 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
   useEffect(() => {
     const handler = optionsRef.current.onUpdate;
     if (typeof handler === 'function' && engineRef.current) {
-      handler({ ...state }, engineRef.current);
+      try {
+        const result = handler({ ...state }, engineRef.current);
+        if (result && typeof result.then === 'function') Promise.resolve(result).catch(() => {});
+      } catch {
+        /* State observers cannot interrupt editor operations. */
+      }
     }
   }, [state]);
 
+  const getEventBinding = useCallback(
+    () =>
+      createEventEngineBinding({
+        getEngine: () => engineRef.current,
+        getScope,
+        endScope,
+        getOptions: () => optionsRef.current,
+        applyDefault: defaultProcessOperations,
+        ownedNames: [...diagnosticFieldNames, preparedSchema?.form?.status_field?.data_name].filter(
+          Boolean
+        ),
+      }),
+    [getScope, endScope, defaultProcessOperations, diagnosticFieldNames, preparedSchema]
+  );
+
   return {
     ...state,
+    getEventBinding,
     setValue,
     setValues,
     reset,

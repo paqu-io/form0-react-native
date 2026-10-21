@@ -153,7 +153,7 @@ export function buildDiagnosticInstancePath({
   const relative = parentPath.map((part, i) => ({
     repeatableKey: part.key,
     instanceId: part.id ?? null,
-    index: parentIndices[i] >= 0 ? parentIndices[i] : 0,
+    index: Number.isInteger(parentIndices[i]) && parentIndices[i] >= 0 ? parentIndices[i] : 0,
     identity: part.id == null ? 'position' : 'id',
   }));
   // Canvas callers may already supply the complete parent path.
@@ -172,7 +172,7 @@ export function buildDiagnosticInstancePath({
     {
       repeatableKey,
       instanceId,
-      index: index >= 0 ? index : 0,
+      index: Number.isInteger(index) && index >= 0 ? index : 0,
       identity: instanceId == null ? 'position' : 'id',
     },
   ];

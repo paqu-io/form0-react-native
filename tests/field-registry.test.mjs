@@ -479,10 +479,14 @@ test('save mode exposes a validation-tolerant snapshot action', () => {
     'Save should return the current snapshot, validation summary, and dirty state'
   );
 
+  const draftHandler = formRendererSource.slice(
+    formRendererSource.indexOf('const handleFormSave = useCallback('),
+    formRendererSource.indexOf('const handlePrimaryAction =')
+  );
   assert.doesNotMatch(
-    formRendererSource,
-    /const handleFormSave = useCallback\([\s\S]*?validationSummary\?\.hasErrors[\s\S]*?return;/,
-    'Save should not be blocked by validation errors'
+    draftHandler,
+    /validationSummary\?\.hasErrors[\s\S]*?return;/,
+    'Root draft save should not be blocked by validation errors'
   );
 
   assert.match(
