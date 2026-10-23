@@ -61,6 +61,14 @@ export function useRepeatableInstanceEngine({
     () => buildInstanceSeedSignature(initialInstance),
     [initialInstance]
   );
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine?.recordCoordinator?.hasCollections())
+      Promise.resolve(engine.eval()).catch((error) => {
+        if (engineRef.current === engine)
+          console.warn('form0: accepted collection evaluation failed.', error);
+      });
+  }, [repeatableState]);
   const baseValuesSignature = useMemo(() => JSON.stringify(baseValues || {}), [baseValues]);
 
   useEffect(() => {
@@ -147,6 +155,25 @@ export function useRepeatableInstanceEngine({
         initialValues: mergedValues,
         helpers: optionsRef.current.helpers,
         security: optionsRef.current.security,
+        recordSource: {
+          metadata: () => initialInstance,
+          pickValues: (values) =>
+            Object.fromEntries(
+              fieldNames
+                .filter((name) => Object.hasOwn(values, name))
+                .map((name) => [name, values[name]])
+            ),
+          repeatable: () => repeatableStateRef.current,
+          setRepeatable: (next) => {
+            repeatableStateRef.current = next;
+            setRepeatableState(next);
+          },
+          notify: (nextEngine) => {
+            const next = reduceEngineState(nextEngine.getState());
+            valuesRef.current = next.values;
+            setState(next);
+          },
+        },
       });
       engine.eval();
       return engine;

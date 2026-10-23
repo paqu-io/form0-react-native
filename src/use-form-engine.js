@@ -124,6 +124,11 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
         initialValues: { ...(seedValues || {}) },
         helpers: optionsRef.current.helpers,
         security: optionsRef.current.security,
+        recordSource: {
+          repeatable: () => optionsRef.current.recordRepeatable?.() || {},
+          setRepeatable: (next) => optionsRef.current.setRecordRepeatable?.(next),
+          notify: () => syncState(),
+        },
       });
       engine.eval();
       engineRef.current = engine;
