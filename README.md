@@ -282,7 +282,16 @@ mode. Read-only parents allow browsing descendants but prevent editing, adding a
 `repeatableEntryMode="edit"` does not override that restriction. This is a renderer option, with no
 schema or saved-record change.
 
-Opening modes control editing and lifecycle entry. Calculations, conditions and intrinsic
-validation still evaluate when a row is viewed. With managed lifecycle enabled, opening runs
-`load-repeatable`; entering editing runs `edit-repeatable` or `new-repeatable` according to the
-row's classification. Viewing accepted values without recalculation is a separate pending policy.
+View mode displays supplied accepted calculations and evaluates conditions and intrinsic validation
+without recalculating or applying missing defaults. Edit starts calculations using current permitted
+ancestor values. For accepted child totals 110/220 and root 330, viewing keeps those values; editing
+line 1 computes 120, saving it produces root 340, and cancelling keeps root 330. Unsaved selections
+after persistence failure remain working values when switching back to View.
+
+Managed opening awaits load, then new/edit for direct editing. View → Edit runs edit without replaying
+load. Handlers receive `event.mode: 'readonly' | 'edit'` for their executing scope. View permits reads,
+ALERT and engine-lifetime ON/OFF, but rejects a complete operation batch containing record writes
+before host delegation. Guard editable-load setters or move writable initialization to new/edit.
+Validation/close phases retain stricter restrictions. These capabilities require the coordinated
+core release containing engine mode control and readonly scoped evaluation; no schema or record
+migration is introduced.

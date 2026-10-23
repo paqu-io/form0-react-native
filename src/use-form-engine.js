@@ -1,3 +1,4 @@
+import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -47,10 +48,17 @@ function prepareSchema(schema) {
   return copy;
 }
 
-export function useFormEngine(schema, initialValues = {}, overrideValues, options = {}) {
+export function useFormEngine(
+  schema,
+  initialValues = {},
+  overrideValues,
+  options = {},
+  mode = 'edit'
+) {
   const [state, setState] = useState(createEmptyState);
   const [engineReadyVersion, setEngineReadyVersion] = useState(0);
   const engineRef = useRef(null);
+  const modeRef = useEngineMode(engineRef, mode, () => syncState());
   const initialValuesRef = useRef(initialValues || {});
   const overrideValuesRef = useRef(overrideValues || null);
   const optionsRef = useRef(options || {});
@@ -120,6 +128,7 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
         return;
       }
       const engine = createObservedEngine({
+        mode: modeRef.current,
         schema: preparedSchema,
         initialValues: { ...(seedValues || {}) },
         helpers: optionsRef.current.helpers,

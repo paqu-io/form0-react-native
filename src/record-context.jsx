@@ -70,7 +70,7 @@ export function attachRecordEngine(engine, coordinator, path, source, report) {
   engine.eval = () => {
     const version = ++sequence;
     coordinator.changed();
-    pending = coordinator.evaluate(path).then((result) => {
+    pending = coordinator.evaluate(path, { interactionMode: engine.getMode() }).then((result) => {
       if (!active || version !== sequence) return;
       if (result.status !== 'evaluated') {
         throw new Error(result.issues?.[0]?.message || 'Record scope evaluation failed.');

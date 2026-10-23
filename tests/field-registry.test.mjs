@@ -124,7 +124,7 @@ test('form renderer exposes parity-facing snapshot and engine APIs', () => {
 
   assert.match(
     formRendererSource,
-    /useFormEngine\(schema, appliedRendererInitialValues, overrideValues, effectiveEngineOptions\)/,
+    /useFormEngine\(\s*schema,\s*appliedRendererInitialValues,\s*overrideValues,\s*effectiveEngineOptions,\s*interactionMode\s*\)/,
     'Root engine should receive the applied seed values and engine options'
   );
 

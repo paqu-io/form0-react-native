@@ -38,7 +38,111 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
     },
   });
   testCase(
-    'Native opening a child evaluates its editor while Cancel and Save isolate accepted totals',
+    'Native returning to View after persistence failure retains selected unsaved values',
+    async () => {
+      const form = schema(),
+        seed = initial(),
+        original = structuredClone(seed);
+      const save = vi.fn().mockRejectedValue(new Error('Storage unavailable'));
+      const snapshots = vi.fn();
+      const props = {
+        schema: form,
+        initialSnapshot: seed,
+        onSubmit: save,
+        onSnapshotChange: snapshots,
+        engineOptions: { security, diagnostics: { console: false } },
+      };
+      const mounted = render(<FormRenderer {...props} mode="edit" />);
+      fireEvent.click(await screen.findByText('Submit'));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      await screen.findByText('360');
+      mounted.rerender(<FormRenderer {...props} mode="readonly" />);
+      await screen.findByText('Edit');
+      expect(screen.getByText('360')).toBeTruthy();
+      expect(
+        snapshots.mock.calls.at(-1)[0].repeatable.lines.map((row) => row.values.total)
+      ).toEqual([120, 240]);
+      expect(snapshots.mock.calls.at(-1)[1].dirty).toBe(true);
+      expect(seed).toEqual(original);
+    }
+  );
+  testCase(
+    'Native root view preserves supplied totals and load/edit receive the executing mode',
+    async () => {
+      const form = schema();
+      const seen = vi.fn();
+      form.form.events = {
+        code: "ON('load-record', function(e) { seen(e.type, e.mode); }); ON('edit-record', function(e) { seen(e.type, e.mode); });",
+      };
+      const seed = initial();
+      seed.raw_values.grand = 333;
+      const original = structuredClone(seed);
+      render(
+        <FormRenderer
+          schema={form}
+          initialSnapshot={seed}
+          mode="readonly"
+          engineOptions={{
+            security,
+            helpers: { seen },
+            diagnostics: { console: false },
+            events: { lifecycle: true, recordKind: 'existing' },
+          }}
+        />
+      );
+      await waitFor(() => expect(seen.mock.calls).toEqual([['load-record', 'readonly']]));
+      expect(screen.getByText('333')).toBeTruthy();
+      fireEvent.click(screen.getByText('Edit'));
+      expect(await screen.findByText('330')).toBeTruthy();
+      await waitFor(() =>
+        expect(seen.mock.calls).toEqual([
+          ['load-record', 'readonly'],
+          ['edit-record', 'edit'],
+        ])
+      );
+      expect(seed).toEqual(original);
+    }
+  );
+  testCase('Native view load rejects setter and alert before host delegation', async () => {
+    const form = schema();
+    form.form.events = {
+      code: "ON('load-record', function(e) { e.mode = 'edit'; ALERT('Forbidden alert'); SETVALUE('tax', 9); });",
+    };
+    const delegate = vi.fn(),
+      warning = vi.fn();
+    let controller;
+    render(
+      <FormRenderer
+        schema={form}
+        initialSnapshot={initial()}
+        mode="readonly"
+        engineOptions={{
+          security,
+          diagnostics: { console: false },
+          onOperations: delegate,
+          onWarning: warning,
+          events: { lifecycle: true, recordKind: 'existing' },
+          onEventController: (value) => (controller = value),
+        }}
+      />
+    );
+    await waitFor(() => expect(controller).toBeTruthy());
+    expect(warning).toHaveBeenCalled();
+    expect(screen.getByText('330')).toBeTruthy();
+    expect(screen.queryByText('Forbidden alert')).toBeNull();
+    expect(delegate).not.toHaveBeenCalled();
+    let result;
+    await act(async () => {
+      result = await controller.dispatch({
+        type: 'load-record',
+        metadata: { mode: 'edit' },
+      });
+    });
+    expect(result.issues[0].code).toBe('readonly_operation_not_allowed');
+    expect(delegate).not.toHaveBeenCalled();
+  });
+  testCase(
+    'Native viewing preserves accepted calculations and editing isolates Cancel and Save',
     async () => {
       let controller;
       const snapshots = vi.fn();
@@ -64,10 +168,11 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       await screen.findByText('lines 1');
       fireEvent.click(screen.getAllByText('View')[0]);
       expect(await screen.findByDisplayValue('100')).toBeTruthy();
-      expect(await screen.findByText('120')).toBeTruthy();
+      expect(await screen.findByText('110')).toBeTruthy();
       expect(screen.getByDisplayValue('100').readOnly).toBe(true);
       expect(screen.queryByText('Save')).toBeNull();
       fireEvent.click(screen.getByText('Edit'));
+      expect(await screen.findByText('120')).toBeTruthy();
       expect(screen.getByText('Save')).toBeTruthy();
       const assertAccepted = () => {
         const snapshot = snapshots.mock.calls.at(-1)[0];
@@ -122,15 +227,17 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         form.form.elements[2].elements.push(field('TextField', 'row_trace'));
         form.form.events = {
           code: [
-            "ON('load-repeatable', 'lines', function () { SETVALUE('row_trace', 'load'); });",
+            "ON('load-repeatable', 'lines', function (event) { if (event.mode === 'edit') SETVALUE('row_trace', 'load'); });",
             "ON('edit-repeatable', 'lines', function () { SETVALUE('row_trace', $row_trace + ':edit'); });",
             "ON('new-repeatable', 'lines', function () { SETVALUE('row_trace', $row_trace + ':new'); });",
           ].join('\n'),
         };
+        const openingSeed = initial();
+        openingSeed.repeatable.lines[0].values.row_trace = 'accepted';
         render(
           <FormRenderer
             schema={form}
-            initialSnapshot={initial()}
+            initialSnapshot={openingSeed}
             repeatableEntryMode={entryMode}
             engineOptions={{
               security,
@@ -146,11 +253,11 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         const input = await screen.findByDisplayValue('100');
         expect(input.readOnly).toBe(entryMode === 'readonly');
         if (entryMode === 'readonly') {
-          await screen.findByDisplayValue('load');
+          await screen.findByDisplayValue('accepted');
           expect(screen.queryByText('Save')).toBeNull();
           fireEvent.click(screen.getByText('Edit'));
         }
-        await screen.findByDisplayValue('load:edit');
+        await screen.findByDisplayValue(entryMode === 'readonly' ? 'accepted:edit' : 'load:edit');
         expect(input.readOnly).toBe(false);
         fireEvent.click(screen.getByText('Cancel'));
         await screen.findByText('Discard');

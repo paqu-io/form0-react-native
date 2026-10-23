@@ -1,7 +1,8 @@
 # Plan 3 Android acceptance
 
-Final Android acceptance is paused pending the separate view-evaluation policy discussion.
-The opening-controls patch is automated below; actual device acceptance is pending. Adapter, Node and Chromium results do not establish Hermes
+Accepted-snapshot viewing, load permissions and event.mode are implemented; automated evidence
+and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
+Actual device acceptance is pending. Reuse the installed SDK 58 harness with the new candidates. Adapter, Node and Chromium results do not establish Hermes
 performance or device acceptance. iOS remains deferred. Use the packed core/Native candidates named
 in the Plan 3 verification ledger; their labels retain the last published versions until release.
 
@@ -75,27 +76,37 @@ opening a child. These are accepted in the root's working tree, not necessarily 
 | State                                        | Line 1 amount / total | Line 2 amount / total | Root grand |
 | -------------------------------------------- | --------------------- | --------------------- | ---------- |
 | Fresh fixture, accepted children             | 100 / 110             | 200 / 220             | 330        |
+| Each child viewed, before entering Edit      | 100 / 110             | 200 / 220             | 330        |
 | Each child opened for editing, before saving | 100 / 120             | 200 / 240             | 330        |
 | Root refresh selected for all children       | 100 / 120             | 200 / 240             | 360        |
 
-The row's **View** button now opens view mode, with **Edit** when its parent permits editing.
-Calculations still use current parent inputs immediately; the follow-up evaluation policy is pending.
-Opening the row does not accept that calculation into
-the root. **Cancel**, followed by **Discard** if prompted, leaves accepted totals unchanged. **Save**
-accepts that row's new calculation: saving only line 1 produces root 340, only line 2 produces 350.
-If you saved any children while inspecting, reset the fixture before continuing below. This
-walkthrough tests root submission of closed children; no child needs to be opened first.
+The row's **View** button opens view mode with the accepted total, without calculations or missing
+schema defaults. **Edit** starts calculations against current permitted ancestor values. **Cancel**,
+followed by **Discard** if prompted, leaves the containing record unchanged. **Save** accepts the
+new row calculation: saving only line 1 produces root 340; only line 2 produces 350. No child needs
+to be opened before root submission.
 
-1. Tap **Confirmation / persistence**. Expect accepted child totals 110 and 220 and root `grand` 330.
-2. Enable **Simulate persistence failure**.
-3. Submit and choose **Update all and continue**. Expect the host failure status, unsaved working
-   totals 120 and 240, root 360 and dirty work; no successful-persistence acknowledgement.
-4. Tap **Confirmation / persistence** again to reset to the original fixture; disable simulated failure.
-5. Submit and choose **Keep existing values and continue**. Expect root 330 and persisted pending freshness.
-6. Tap **Reopen saved**. Expect `acceptedChildTotals` 110 and 220 in the status, root 330, and the
-   restored pending indicator. Opening a child would again display 120 or 240 in its editor.
-7. Submit and choose **Update all and continue**. Expect root 360 and successfully persisted current freshness.
-8. Tap **Reopen saved** again. Expect 360 with no pending indicator. Reset before the large fixture.
+1. Tap **Confirmation / persistence** to reset this fixture. Expect accepted totals 110/220 and root 330.
+2. Open the **lines** list with its **View** control.
+3. Tap **View** beside **lines 1**. Expect amount 100, total 110, and an Edit action.
+4. Tap **Edit**. Expect total 120; the containing accepted tree still has 110/220 and root 330.
+5. Tap **Cancel**.
+6. Confirm **Discard** if prompted. Expect accepted totals remain 110/220.
+7. Use **Back** to return to the root form.
+8. Enable **Simulate persistence failure**.
+9. Submit the root. Expect the update review, covering both children.
+10. Choose **Update all and continue**. Expect the host failure status, unsaved working totals
+    120/240, root 360 and dirty work; no successful-persistence acknowledgement.
+11. Tap **Confirmation / persistence** to reset the original fixture.
+12. Disable simulated persistence failure.
+13. Submit the root again. Expect the update review.
+14. Choose **Keep existing values and continue**. Expect root 330 and persisted pending freshness.
+15. Tap **Reopen saved**. Expect accepted totals 110/220, root 330 and the restored pending indicator.
+    Viewing those children would show 110/220; Edit would recalculate 120/240 locally.
+16. Submit again. Expect another update review.
+17. Choose **Update all and continue**. Expect root 360 and successfully persisted current freshness.
+18. Tap **Reopen saved**. Expect root 360 with no pending indicator. The next walkthrough starts
+    its own fixture.
 
 ## Walkthrough 3 — responsiveness and cancellation
 
@@ -150,3 +161,17 @@ The updated candidate passes all 23 Native adapter cases, 54 Node tests and publ
 Opening controls also pass actual Chromium main-thread/worker interactions. Exact archives and
 provenance are in `form0-core/analyses/OPENING_CONTROLS_VERIFICATION.md`; previous SDK 58 bundle
 exports and the earlier physical-device walkthrough apply to their original candidates.
+
+## Accepted-snapshot candidate — 23 October
+
+The earlier opening-controls evidence below applies to its original candidate. The current candidate
+preserves accepted calculations while viewing, runs load once with `event.mode`, and starts edit
+calculations without replaying load. Mode cannot authorize a view-time setter; prohibited batches
+produce execution issues/warnings and no partial record or alert updates. Read-only timestamps
+remain unchanged. Current unsaved values after persistence failure are preserved when returning to
+View. The verification document above records the new automated results and archives.
+
+The retained device dependency tree is refreshed from those exact archives without reinstalling
+Expo or changing SDK pins. Reload the app in the existing Metro session before resetting fixtures.
+If Metro still serves the previous package bytes, restart it with the same startup command above;
+its start script clears Metro's cache. Do not rerun the harness generator or reinstall dependencies.

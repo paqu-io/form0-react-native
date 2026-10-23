@@ -1,3 +1,4 @@
+import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,6 +46,7 @@ export function useRepeatableInstanceEngine({
   initialInstance = {},
   diagnosticInstancePath = [],
   diagnosticsActive = true,
+  mode = 'edit',
   options = {},
 }) {
   const [state, setState] = useState(() => createEmptyState(repInfo));
@@ -53,6 +55,7 @@ export function useRepeatableInstanceEngine({
     cloneDeep(initialInstance?.repeatable || {})
   );
   const engineRef = useRef(null);
+  const modeRef = useEngineMode(engineRef, mode, (engine) => syncState(engine));
   const baseValuesRef = useRef(baseValues || {});
   const valuesRef = useRef(initialInstance?.values || {});
   const repeatableStateRef = useRef(cloneDeep(initialInstance?.repeatable || {}));
@@ -151,6 +154,7 @@ export function useRepeatableInstanceEngine({
         ...(instanceValues || {}),
       };
       const engine = createObservedEngine({
+        mode: modeRef.current,
         schema,
         initialValues: mergedValues,
         helpers: optionsRef.current.helpers,

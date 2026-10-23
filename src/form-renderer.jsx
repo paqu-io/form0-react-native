@@ -526,8 +526,8 @@ function getTimestampSourceValue(source, key) {
   return undefined;
 }
 
-function deriveInitialTimestamps(initialValues, overrideValues) {
-  const now = new Date().toISOString();
+function deriveInitialTimestamps(initialValues, overrideValues, mode = 'edit') {
+  const now = mode === 'readonly' ? null : new Date().toISOString();
   const resolveValue = (key, fallback) => {
     const overrideValue = getTimestampSourceValue(overrideValues, key);
     if (overrideValue !== undefined) {
@@ -567,9 +567,9 @@ function areTimestampValuesEqual(a, b) {
   );
 }
 
-function useRecordTimestamps({ initialValues, overrideValues, values }) {
+function useRecordTimestamps({ initialValues, overrideValues, values, mode = 'edit' }) {
   const [timestamps, setTimestamps] = useState(() =>
-    deriveInitialTimestamps(initialValues, overrideValues)
+    deriveInitialTimestamps(initialValues, overrideValues, mode)
   );
   const timestampsRef = useRef(timestamps);
   const sourcesRef = useRef({ initialValues, overrideValues });
@@ -596,7 +596,7 @@ function useRecordTimestamps({ initialValues, overrideValues, values }) {
 
     sourcesRef.current = { initialValues, overrideValues };
     cancelScheduledUpdate();
-    const next = deriveInitialTimestamps(initialValues, overrideValues);
+    const next = deriveInitialTimestamps(initialValues, overrideValues, mode);
     setTimestamps((previous) => (areTimestampValuesEqual(previous, next) ? previous : next));
   }, [cancelScheduledUpdate, initialValues, overrideValues]);
 
@@ -611,6 +611,7 @@ function useRecordTimestamps({ initialValues, overrideValues, values }) {
 
     valuesRef.current = values;
     cancelScheduledUpdate();
+    if (mode === 'readonly') return undefined;
     updateTimerRef.current = setTimeout(() => {
       updateTimerRef.current = null;
       setTimestamps((previous) => {
@@ -627,7 +628,7 @@ function useRecordTimestamps({ initialValues, overrideValues, values }) {
     }, 500);
 
     return cancelScheduledUpdate;
-  }, [cancelScheduledUpdate, values]);
+  }, [cancelScheduledUpdate, values, mode]);
 
   const touchUpdatedAt = useCallback((nextTimestamp = new Date().toISOString()) => {
     setTimestamps((previous) => {
@@ -831,6 +832,9 @@ function FormRendererContent({
   );
   const eventDispatchRef = useRef(null);
   const managedSaveBusyRef = useRef(false);
+  // Interaction mode changes retain the same editor and lifecycle session.
+  const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
+  const [interactionMode, setInteractionMode] = useState(normalizedInitialMode);
   const effectiveEngineOptions = useMemo(
     () => ({
       ...(engineOptions || {}),
@@ -856,7 +860,13 @@ function FormRendererContent({
     engineReadyVersion,
     getEventBinding,
     engine: rootRecordEngine,
-  } = useFormEngine(schema, appliedRendererInitialValues, overrideValues, effectiveEngineOptions);
+  } = useFormEngine(
+    schema,
+    appliedRendererInitialValues,
+    overrideValues,
+    effectiveEngineOptions,
+    interactionMode
+  );
   const [submitCount, setSubmitCount] = useState(0);
   const [repeatableState, setRepeatableState] = useState(appliedRepeatableSeed);
   const [repeatableStack, setRepeatableStack] = useState([]);
@@ -875,10 +885,6 @@ function FormRendererContent({
   const appliedSnapshotSeedSignatureRef = useRef(null);
   const appliedSchemaRef = useRef(schema);
   const submissionSnapshotRef = useRef(null);
-
-  // Interaction mode state (allows switching between edit/readonly at runtime)
-  const normalizedInitialMode = modeProp === 'readonly' ? 'readonly' : 'edit';
-  const [interactionMode, setInteractionMode] = useState(normalizedInitialMode);
 
   // Track changes for discard prompt
   const initialValuesRef = useRef(cloneDeep(appliedRendererInitialValues || {}));
@@ -941,6 +947,7 @@ function FormRendererContent({
     ? (values?.[statusFieldName] ?? statusField?.default_value ?? null)
     : null;
   const { timestamps, timestampsRef, touchUpdatedAt } = useRecordTimestamps({
+    mode: interactionMode,
     initialValues: appliedInitialTimestampSeedValues,
     overrideValues,
     values,
@@ -3440,6 +3447,7 @@ function RepeatableEditorScreen({
     buildParentValues,
   } = useRepeatableInstanceEngine({
     schema,
+    mode: readOnly ? 'readonly' : 'edit',
     repInfo: screen.repInfo,
     baseValues,
     initialInstance: initialInstance || createEmptyRepeatableInstance(screen.repInfo),
@@ -3469,6 +3477,7 @@ function RepeatableEditorScreen({
     [initialInstance]
   );
   const { timestampsRef, touchUpdatedAt } = useRecordTimestamps({
+    mode: readOnly ? 'readonly' : 'edit',
     initialValues: initialTimestampSeedValues,
     overrideValues: null,
     values,
