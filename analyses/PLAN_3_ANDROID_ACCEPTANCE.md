@@ -7,14 +7,15 @@ in the Plan 3 verification ledger; their labels retain the last published versio
 ## Prepare and start
 
 The independent harness lives at `.local-test-harnesses/form0-plan3-20261022/device/` in the workspace.
-Its generator is `scripts/prepare-record-device-harness.mjs`. It uses existing mobile-template SDK pins
+Its generator is `scripts/prepare-record-device-harness.mjs`. It uses mobile-template SDK 58 pins
 and the packed candidates, with a separate SQLite database (`form0-plan3-acceptance.db`). It does not
 read environment files or alter the production app/database. The SQLite envelope stores record,
 snapshot and freshness together before acknowledging a callback or explicit preparation.
 
 Installation is expected to use roughly 1–2 GiB plus npm cache. Check both the Windows backing disk and
 WSL space before installing. The independent SDK tree is installed and an Android Hermes bytecode export passed. This is bundle
-verification, not device acceptance. Reuse that tree; do not reinstall merely to resume acceptance.
+verification, not device acceptance. The SDK 58 migration updates that tree in place while retaining
+SDK 57 manifests and evidence. Reuse the installed tree; do not reinstall merely to resume acceptance.
 Native/mobile dependency exceptions remain separate; do not upgrade unrelated dependencies here.
 
 The runnable harness is JavaScript. Its declaration-only TypeScript check lives outside the Expo
@@ -24,10 +25,11 @@ passes without them. No SDK or application dependency change is required for tha
 
 1. Open a terminal in the device harness directory above and select the workspace's pinned Node
    with `nvm use 24.22.1`.
-2. Run `npm start -- --max-workers 2` and scan its QR code in Expo Go. Keep the phone and Windows
-   machine on the same Wi-Fi. If WSL networking prevents the LAN connection, stop Metro and run
-   `npm start -- --tunnel --max-workers 2`, following the installed CLI's account prompts locally.
-   Do not upgrade SDK dependencies to solve a connection problem.
+2. Use the Android Expo Go client for SDK 58. Run `npm start -- --max-workers 2` and scan its QR code.
+   Keep the phone and Windows machine on the same Wi-Fi. If WSL networking prevents the LAN connection,
+   stop Metro, run `npx expo login` locally, then run `npm start -- --tunnel --max-workers 2`.
+   SDK 58's default tunnel uses your Expo account. To use the already installed legacy ngrok provider,
+   run `npm start -- --tunnel ngrok --max-workers 2`. Keep account credentials local.
 3. Record device model, Android version, Expo client/build version, the displayed React Native version,
    and the displayed `Hermes true` before acceptance. Do not run acceptance through Chrome JS execution.
 
@@ -35,7 +37,7 @@ Entry registration and cache-clearing commands follow the
 [Expo entrypoint guidance](https://github.com/expo/expo/blob/main/docs/pages/troubleshooting/application-has-not-been-registered.mdx)
 and [CLI guidance](https://github.com/expo/expo/blob/main/docs/pages/router/installation.mdx).
 See also [physical-device connections](https://github.com/expo/expo/blob/main/docs/pages/get-started/start-developing.mdx).
-These commands do not establish SDK 57/device compatibility by themselves. The fixture source and package pins
+These commands do not establish SDK 58/device compatibility by themselves. The fixture source and package pins
 are the concrete test inputs; record the actual client/runtime used.
 
 ## Walkthrough 1 — nested editing and accepted save/cancel isolation
