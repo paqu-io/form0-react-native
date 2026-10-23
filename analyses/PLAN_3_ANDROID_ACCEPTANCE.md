@@ -36,13 +36,20 @@ are the concrete test inputs; record the actual client/runtime used.
 ## Walkthrough 1 — nested editing and accepted save/cancel isolation
 
 1. Tap **Nested editing**. Expect root `grand_total` 130; this starts a fresh unsaved fixture.
-2. Open **projects**, then **P1**, and enter **Edit**. Expect tasks with accepted costs 10 and 20.
-3. Change **surcharge** to 5. Expect P1 `subtotal` 35.
-4. Cancel P1 and discard its edits if prompted. Expect root `grand_total` remains 130.
-5. Open P1 again, enter Edit, set surcharge to 5, and save the child. Expect root `grand_total` 135.
-6. Open **P2**. Expect subtotal 100; P1's edit has not changed P2's tasks. Return without changes.
-7. Submit the root. Expect successful persistence and no record-ID/order changes. Continue with the
-   next walkthrough using its own fixture button; do not carry this fixture into it.
+2. Open the **projects** list using its row/open control.
+3. Open **P1**. Expect accepted task costs 10 and 20.
+4. Tap **Edit** in the P1 editor.
+5. Change **surcharge** to 5. Expect P1 `subtotal` 35; the app's root working total remains 130.
+6. Tap **Cancel** in P1.
+7. Confirm discarding edits if prompted. Expect the root working total remains 130.
+8. Open P1 again from the projects list.
+9. Tap **Edit**.
+10. Set surcharge to 5.
+11. Save the child. Expect the root working total becomes 135.
+12. Open **P2**. Expect subtotal 100; P1's edit has not changed P2's tasks.
+13. Use the top-left back control to return to the projects list, then to the root form.
+14. Submit the root. Expect successful persistence and no row-ID/order changes. The next walkthrough
+    starts its own fixture; do not carry this fixture into it.
 
 ## Walkthrough 2 — confirmation, persistence failure and restoration
 

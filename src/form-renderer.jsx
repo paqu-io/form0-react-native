@@ -2339,6 +2339,10 @@ function FormRendererContent({
     rootValidationSummary,
     rootEvents.lifecycle,
     rootEvents.prepare,
+    rootEvents.controller,
+    rootEvents.record,
+    recordCoordinator,
+    submissionReview.prepare,
     submit,
     timestampsRef,
     touchUpdatedAt,
@@ -2362,6 +2366,7 @@ function FormRendererContent({
           });
         }
       } catch {
+        recordCoordinator?.cancelPreparation();
         /* Persistence remains application-owned. */
       } finally {
         managedSaveBusyRef.current = false;
@@ -2390,6 +2395,10 @@ function FormRendererContent({
     hasChanges,
     rootEvents.lifecycle,
     rootEvents.prepare,
+    rootEvents.controller,
+    rootEvents.record,
+    recordCoordinator,
+    submissionReview.prepare,
     onSave,
     rootValidationSummary,
     statusFieldName,

@@ -138,4 +138,37 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       expect(draft.payload.repeatable.lines.map((row) => row.values.total)).toEqual([110, 220]);
     }
   );
+  testCase(
+    'Native failed draft persistence releases its preparation without acknowledging pending freshness',
+    async () => {
+      const onSave = vi.fn().mockRejectedValue(new Error('Draft persistence failed'));
+      let controller;
+      render(
+        <FormRenderer
+          schema={schema(true)}
+          initialSnapshot={initial()}
+          onSave={onSave}
+          primaryActionMode="save"
+          engineOptions={{
+            security,
+            diagnostics: { console: false },
+            onEventController: (value) => {
+              controller = value;
+            },
+          }}
+        />
+      );
+      await waitFor(() => expect(controller).toBeTruthy());
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      const [snapshot, meta] = onSave.mock.calls[0];
+      expect(snapshot.repeatable.lines.map((row) => row.values.total)).toEqual([110, 220]);
+      expect(meta.freshness.status).toBe('pending');
+      await waitFor(async () =>
+        expect(
+          (await controller.getSaveChanges({ preparationId: meta.preparationId })).status
+        ).toBe('failed')
+      );
+    }
+  );
 }
