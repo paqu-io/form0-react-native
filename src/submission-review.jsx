@@ -1,7 +1,8 @@
 import { useTheme } from './theme-context.jsx';
 import React, { useMemo } from 'react';
-import { Modal, View, ScrollView, Pressable } from 'react-native';
+import { Modal, View, ScrollView } from 'react-native';
 import { Text } from './typography.jsx';
+import { FormActionButton } from './form-action-button.jsx';
 import {
   createChangeLabels,
   displaySubmissionValue,
@@ -18,16 +19,8 @@ export function SubmissionReview({ state, schema, snapshot, messages: overrides 
   );
   const review = state.review;
   if (!review) return null;
-  const button = (text, action, disabled = false) => (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={action}
-      style={{ padding: 12, opacity: disabled ? 0.4 : 1 }}
-    >
-      <Text>{text}</Text>
-    </Pressable>
+  const button = (id, label, onPress, disabled = false, variant = 'cancel') => (
+    <FormActionButton action={{ id, label, onPress, disabled, variant }} theme={theme} />
   );
   return (
     <Modal visible transparent animationType="fade" onRequestClose={() => state.choose('cancel')}>
@@ -67,23 +60,34 @@ export function SubmissionReview({ state, schema, snapshot, messages: overrides 
           {review.page?.issues?.length ? (
             <Text accessibilityRole="alert">{review.page.issues[0].message}</Text>
           ) : null}
-          <View style={{ flexDirection: 'row' }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: 8,
+              marginVertical: 12,
+            }}
+          >
             {button(
+              'previous',
               messages.previous,
               () => state.page(Math.max(0, review.offset - 50)),
               !review.offset
             )}
             {button(
+              'next',
               messages.next,
               () => state.page(review.offset + 50),
               review.offset + 50 >= review.changeCount
             )}
           </View>
-          {button(messages.refresh, () => state.choose('refresh'))}
-          {review.choices.includes('retain')
-            ? button(messages.retain, () => state.choose('retain'))
-            : null}
-          {button(messages.cancel, () => state.choose('cancel'))}
+          <View style={{ gap: 8 }}>
+            {button('refresh', messages.refresh, () => state.choose('refresh'), false, 'primary')}
+            {review.choices.includes('retain')
+              ? button('retain', messages.retain, () => state.choose('retain'))
+              : null}
+            {button('cancel', messages.cancel, () => state.choose('cancel'))}
+          </View>
         </View>
       </View>
     </Modal>
