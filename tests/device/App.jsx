@@ -1,9 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Platform, View, Text, Pressable, Switch } from 'react-native';
+import { Platform, View, Text, Pressable, Switch, ScrollView } from 'react-native';
 import { FormRenderer, form0Fonts } from 'form0-react-native';
 import { useFonts } from 'expo-font';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { deviceFixture } from './record-fixtures.js';
+import { profilePreparation } from './preparation-profile.js';
 import { storeStructuredRecord, getRecentStoredRecords } from './local-record-store.js';
 const storage = {
   databaseName: 'form0-plan3-acceptance.db',
@@ -127,6 +128,42 @@ export default function App() {
       abort.current = null;
     }
   };
+  const profile = async () => {
+    if (busy) return;
+    const cancellation = new AbortController();
+    abort.current = cancellation;
+    setBusy(true);
+    setStatus('Profiling the 200-row fixture; this does not edit or save the displayed record.');
+    try {
+      const input = deviceFixture('large200');
+      const result = await profilePreparation({
+        schema: input.schema,
+        snapshot: {
+          values: input.snapshot.raw_values,
+          repeatable: input.snapshot.repeatable,
+        },
+        security: engineOptions.security,
+        signal: cancellation.signal,
+      });
+      const report = {
+        type: 'preparation-profile',
+        rows: 200,
+        dev: typeof __DEV__ !== 'undefined' && __DEV__,
+        hermes: Boolean(globalThis.HermesInternal),
+        androidVersion: Platform.Version,
+        nativeVersion: Platform.constants?.reactNativeVersion,
+        safe,
+        ...result,
+      };
+      console.info('[form0 acceptance] Preparation profile', JSON.stringify(report));
+      setStatus(JSON.stringify(report));
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setBusy(false);
+      abort.current = null;
+    }
+  };
   const persistPrepared = async () => {
     const selected = prepared.current;
     if (!selected || busy) return;
@@ -185,10 +222,15 @@ export default function App() {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
             {button('Reopen saved', reopen)}
             {button('Programmatic prepare', prepare)}
+            {button('Profile preparation (200)', profile)}
             {button('Cancel preparation', () => abort.current?.abort())}
             {button('Persist prepared', persistPrepared)}
           </View>
-          <Text accessibilityLiveRegion="polite">{status}</Text>
+          <ScrollView style={{ maxHeight: 180 }}>
+            <Text selectable accessibilityLiveRegion="polite">
+              {status}
+            </Text>
+          </ScrollView>
           <Text>{busy ? 'Preparing…' : ''}</Text>
           <Text>Working values: {working}</Text>
         </View>

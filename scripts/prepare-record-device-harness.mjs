@@ -89,7 +89,7 @@ await writeFile(
     2,
   ) + "\n",
 );
-for (const file of ["App.jsx", "record-fixtures.js"])
+for (const file of ["App.jsx", "record-fixtures.js", "preparation-profile.js"])
   await copyFile(
     path.join(repo, "tests/device", file),
     path.join(target, file),

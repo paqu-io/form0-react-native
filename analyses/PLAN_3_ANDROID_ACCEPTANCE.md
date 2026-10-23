@@ -2,7 +2,11 @@
 
 Accepted-snapshot viewing, load permissions and event.mode are implemented; automated evidence
 and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
-Actual device acceptance is pending. Reuse the installed SDK 58 harness with the new candidates. Adapter, Node and Chromium results do not establish Hermes
+The maintainer reports walkthroughs 1 and 2 passing on Pixel 8a / Android 17, and the remaining
+walkthrough 3 functional checks passing. Preparation performance remains unresolved: 9,714 ms for
+200 rows and 97,889 ms for 2,000 rows, with maximum observed JS gaps of 148 / 970 ms. No DevTools
+were open. See `form0-core/analyses/ANDROID_PREPARATION_INVESTIGATION.md` for the matched benchmark
+comparison and next diagnostic. Reuse the installed SDK 58 harness with the new candidates. Adapter, Node and Chromium results do not establish Hermes
 performance or device acceptance. iOS remains deferred. Use the packed core/Native candidates named
 in the Plan 3 verification ledger; their labels retain the last published versions until release.
 
@@ -175,3 +179,27 @@ The retained device dependency tree is refreshed from those exact archives witho
 Expo or changing SDK pins. Reload the app in the existing Metro session before resetting fixtures.
 If Metro still serves the previous package bytes, restart it with the same startup command above;
 its start script clears Metro's cache. Do not rerun the harness generator or reinstall dependencies.
+
+## Pixel 8a performance follow-up
+
+Review actions now use the header's themed buttons; child Edit uses the same Pencil icon as root.
+The installed candidate is recorded in `logs/android-profile-candidate.json` in the active harness.
+Walkthroughs 1 and 2 retain their accepted behavioral evidence; confirm the cosmetic adjustment when
+convenient. Performance remains open, so another long 2,000-row run is not requested yet.
+
+1. Reload the existing Metro app. If **Profile preparation (200)** is absent, restart Metro with the
+   existing startup command above. Do not regenerate or reinstall the harness.
+2. Tap **Nested editing** to release the previous large fixture/preparation.
+3. Leave SAFE off to match the original measurement and keep DevTools closed.
+4. Tap **Profile preparation (200)**. This uses a separate synthetic record and does not save or
+   change the displayed form. It runs cold/warm preparations with managed validation off and on.
+5. Copy the selectable JSON in the status area; it is scrollable. Share it with the displayed
+   runtime details and Expo Go client/build version. It is also logged under
+   `[form0 acceptance] Preparation profile` if console forwarding is available.
+
+`computeMs` excludes the measured `yieldWaitMs`; their sum is `elapsedMs` apart from rounding.
+`factoryMs` is reported separately, outside those preparation times. A high timer-wait share
+identifies scheduling overhead; a high compute share calls for a synchronous-work profile. The
+comparison with/without managed validation identifies the cost of participating closed-row handlers.
+Cold/warm differences identify cached setup. These are diagnostic comparisons, not release-build
+or full-controller performance acceptance. Cancel preparation also cancels this diagnostic.
