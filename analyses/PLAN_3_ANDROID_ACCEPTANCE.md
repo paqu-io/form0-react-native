@@ -17,6 +17,11 @@ WSL space before installing. The independent SDK tree is installed and an Androi
 verification, not device acceptance. Reuse that tree; do not reinstall merely to resume acceptance.
 Native/mobile dependency exceptions remain separate; do not upgrade unrelated dependencies here.
 
+The runnable harness is JavaScript. Its declaration-only TypeScript check lives outside the Expo
+project at `../type-checks/native-controller.ts`. Keeping that check inside `device/` caused Expo to
+request TypeScript dependencies during startup; it has been relocated and local Metro startup now
+passes without them. No SDK or application dependency change is required for that correction.
+
 1. Open a terminal in the device harness directory above and select the workspace's pinned Node
    with `nvm use 24.22.1`.
 2. Run `npm start -- --max-workers 2` and scan its QR code in Expo Go. Keep the phone and Windows
