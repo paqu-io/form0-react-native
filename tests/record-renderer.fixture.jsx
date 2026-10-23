@@ -38,6 +38,79 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
     },
   });
   testCase(
+    'Native opening a child evaluates its editor while Cancel and Save isolate accepted totals',
+    async () => {
+      let controller;
+      const snapshots = vi.fn();
+      const seed = initial();
+      const original = structuredClone(seed);
+      render(
+        <FormRenderer
+          schema={schema(true)}
+          initialSnapshot={seed}
+          onSnapshotChange={snapshots}
+          submissionOptions={{ allowRetain: true }}
+          engineOptions={{
+            security,
+            diagnostics: { console: false },
+            events: { lifecycle: true, recordKind: 'existing' },
+            onEventController: (value) => (controller = value),
+          }}
+        />
+      );
+      await waitFor(() => expect(controller).toBeTruthy());
+      fireEvent.click(screen.getByText('lines'));
+      fireEvent.click((await screen.findAllByText('View'))[0]);
+      await screen.findByText('lines 1');
+      fireEvent.click(screen.getAllByText('View')[0]);
+      expect(await screen.findByDisplayValue('100')).toBeTruthy();
+      expect(await screen.findByText('120')).toBeTruthy();
+      expect(screen.getByText('Save')).toBeTruthy();
+      const assertAccepted = () => {
+        const snapshot = snapshots.mock.calls.at(-1)[0];
+        expect(snapshot.raw_values.grand).toBe(330);
+        expect(snapshot.repeatable.lines.map((row) => row.values.total)).toEqual([110, 220]);
+      };
+      assertAccepted();
+      fireEvent.click(screen.getByText('Cancel'));
+      await waitFor(() => {
+        expect(screen.queryByText('Discard') || !screen.queryByDisplayValue('100')).toBeTruthy();
+      });
+      if (screen.queryByText('Discard')) fireEvent.click(screen.getByText('Discard'));
+      await waitFor(() => expect(screen.queryByDisplayValue('100')).toBeNull());
+      assertAccepted();
+      expect(seed).toEqual(original);
+      let review;
+      await act(async () => {
+        review = await controller.prepareSave({ intent: 'submit' });
+      });
+      expect(review.status).toBe('requires_decision');
+      const changes = await controller.getSaveChanges({
+        preparationId: review.preparationId,
+      });
+      expect(changes.changes.map((change) => [change.before, change.after])).toEqual([
+        [330, 360],
+        [110, 120],
+        [220, 240],
+      ]);
+      await act(async () => {
+        await controller.prepareSave({
+          intent: 'submit',
+          decision: { reviewId: review.reviewId, action: 'cancel' },
+        });
+      });
+      fireEvent.click(screen.getAllByText('View')[0]);
+      await screen.findByDisplayValue('100');
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => {
+        const snapshot = snapshots.mock.calls.at(-1)[0];
+        expect(snapshot.raw_values.grand).toBe(340);
+        expect(snapshot.repeatable.lines.map((row) => row.values.total)).toEqual([120, 220]);
+      });
+      expect(seed).toEqual(original);
+    }
+  );
+  testCase(
     'Native automatic submission uses the exact refreshed tree with legacy events disabled',
     async () => {
       const onSubmit = vi.fn();
@@ -166,7 +239,11 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       expect(meta.freshness.status).toBe('pending');
       await waitFor(async () =>
         expect(
-          (await controller.getSaveChanges({ preparationId: meta.preparationId })).status
+          (
+            await controller.getSaveChanges({
+              preparationId: meta.preparationId,
+            })
+          ).status
         ).toBe('failed')
       );
     }

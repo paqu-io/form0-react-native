@@ -5,7 +5,10 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { deviceFixture } from './record-fixtures.js';
 import { storeStructuredRecord, getRecentStoredRecords } from './local-record-store.js';
-const storage = { databaseName: 'form0-plan3-acceptance.db', tableName: 'plan3_freshness' };
+const storage = {
+  databaseName: 'form0-plan3-acceptance.db',
+  tableName: 'plan3_freshness',
+};
 const clock = () => globalThis.performance?.now?.() ?? Date.now();
 export default function App() {
   const [fontsLoaded] = useFonts(form0Fonts);
@@ -61,6 +64,13 @@ export default function App() {
       },
       { config: storage }
     );
+    if (kind === 'nested' || kind === 'confirm') {
+      console.info('[form0 acceptance] Persisted record and freshness', {
+        walkthrough: kind,
+        record,
+        freshness: meta.freshness,
+      });
+    }
     setStatus('Persisted record and freshness together: ' + meta.freshness.status);
   };
   const reopen = async () => {
@@ -94,7 +104,10 @@ export default function App() {
       last = now;
     }, 16);
     try {
-      const result = await target.prepareSave({ intent: 'submit', signal: cancellation.signal });
+      const result = await target.prepareSave({
+        intent: 'submit',
+        signal: cancellation.signal,
+      });
       maxGap = Math.max(maxGap, clock() - last);
       if (result.eligible) prepared.current = { target, result };
       setStatus(
@@ -120,7 +133,9 @@ export default function App() {
     setBusy(true);
     try {
       await persist(selected.result.payload, selected.result.meta);
-      const ack = selected.target.acknowledgeSave({ preparationId: selected.result.preparationId });
+      const ack = selected.target.acknowledgeSave({
+        preparationId: selected.result.preparationId,
+      });
       setStatus('Acknowledgement: ' + ack.status);
       prepared.current = null;
     } catch (error) {
@@ -201,6 +216,13 @@ export default function App() {
                       )
                       .slice(0, 10)
                   ),
+                  ...(kind === 'confirm'
+                    ? {
+                        acceptedChildTotals: (snapshot.repeatable.lines || []).map(
+                          (row) => row.values.total
+                        ),
+                      }
+                    : {}),
                 })
               )
             }

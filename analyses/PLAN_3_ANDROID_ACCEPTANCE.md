@@ -44,21 +44,43 @@ are the concrete test inputs; record the actual client/runtime used.
 
 1. Tap **Nested editing**. Expect root `grand_total` 130; this starts a fresh unsaved fixture.
 2. Open the **projects** list using its row/open control.
-3. Open **P1**. Expect accepted task costs 10 and 20.
-4. Tap **Edit** in the P1 editor.
-5. Change **surcharge** to 5. Expect P1 `subtotal` 35; the app's root working total remains 130.
-6. Tap **Cancel** in P1.
-7. Confirm discarding edits if prompted. Expect the root working total remains 130.
-8. Open P1 again from the projects list.
-9. Tap **Edit**.
-10. Set surcharge to 5.
-11. Save the child. Expect the root working total becomes 135.
-12. Open **P2**. Expect subtotal 100; P1's edit has not changed P2's tasks.
-13. Use the top-left back control to return to the projects list, then to the root form.
-14. Submit the root. Expect successful persistence and no row-ID/order changes. The next walkthrough
+3. Tap **View** beside **P1**. With an editable root, this opens the child directly in edit mode;
+   there is no additional Edit step. Expect accepted task costs 10 and 20.
+4. Change **surcharge** to 5. Expect P1 `subtotal` 35; the app's root working total remains 130.
+5. Tap **Cancel** in P1.
+6. Confirm discarding edits if prompted. Expect the root working total remains 130.
+7. Tap **View** beside P1 again from the projects list.
+8. Set surcharge to 5.
+9. Save the child. Expect the root working total becomes 135.
+10. Tap **View** beside **P2**. Expect subtotal 100; P1's edit has not changed P2's tasks.
+11. Use **Cancel** to leave P2 without saving, discarding edits if prompted, then **Back** to the root.
+12. Submit the root. Expect successful persistence and no row-ID/order changes. The next walkthrough
     starts its own fixture; do not carry this fixture into it.
 
+The persistence status appears only after the SQLite write succeeds. For these small fixtures the
+harness also logs `[form0 acceptance] Persisted record and freshness` after that write. Use the
+development console if terminal forwarding is unavailable. Large fixtures intentionally omit full
+record logs so logging does not distort responsiveness measurements. **Reopen saved** verifies the
+stored envelope; a missing terminal log alone does not indicate a failed write.
+
 ## Walkthrough 2 — confirmation, persistence failure and restoration
+
+This fixture intentionally contains accepted child calculations from an earlier 10% tax, while the
+current root tax is already 20%. The **Working values** status shows `acceptedChildTotals` without
+opening a child. These are accepted in the root's working tree, not necessarily persisted yet.
+
+| State                                        | Line 1 amount / total | Line 2 amount / total | Root grand |
+| -------------------------------------------- | --------------------- | --------------------- | ---------- |
+| Fresh fixture, accepted children             | 100 / 110             | 200 / 220             | 330        |
+| Each child opened for editing, before saving | 100 / 120             | 200 / 240             | 330        |
+| Root refresh selected for all children       | 100 / 120             | 200 / 240             | 360        |
+
+The row's **View** button opens an editor when the parent is editable. Its calculation uses current
+parent inputs immediately, as it did before Plan 3; opening it does not accept that calculation into
+the root. **Cancel**, followed by **Discard** if prompted, leaves accepted totals unchanged. **Save**
+accepts that row's new calculation: saving only line 1 produces root 340, only line 2 produces 350.
+If you saved any children while inspecting, reset the fixture before continuing below. This
+walkthrough tests root submission of closed children; no child needs to be opened first.
 
 1. Tap **Confirmation / persistence**. Expect accepted child totals 110 and 220 and root `grand` 330.
 2. Enable **Simulate persistence failure**.
@@ -66,7 +88,8 @@ are the concrete test inputs; record the actual client/runtime used.
    totals 120 and 240, root 360 and dirty work; no successful-persistence acknowledgement.
 4. Tap **Confirmation / persistence** again to reset to the original fixture; disable simulated failure.
 5. Submit and choose **Keep existing values and continue**. Expect root 330 and persisted pending freshness.
-6. Tap **Reopen saved**. Expect accepted totals 110 and 220, root 330, and the restored pending indicator.
+6. Tap **Reopen saved**. Expect `acceptedChildTotals` 110 and 220 in the status, root 330, and the
+   restored pending indicator. Opening a child would again display 120 or 240 in its editor.
 7. Submit and choose **Update all and continue**. Expect root 360 and successfully persisted current freshness.
 8. Tap **Reopen saved** again. Expect 360 with no pending indicator. Reset before the large fixture.
 
@@ -88,3 +111,24 @@ using the device's profiling tools (for example `adb shell dumpsys meminfo host.
 Expo Go; use the development build's application ID otherwise). Record that tool and process identity.
 The in-app scheduling sampler is not a peak-memory measurement. Report target misses and visible
 stalls; do not silently substitute adapter/browser timings for Hermes acceptance.
+
+## Feedback and focused automated verification — 23 October
+
+The maintainer reported walkthrough 1 working on Android and paused walkthrough 2 after observing
+120/240 in the open row editors. The distinction above corrects the guide; no calculation or editor
+mode behavior was changed. The pre-Plan-3 renderer also opened rows in edit mode under an editable
+root. Device/runtime details and the remaining walkthrough results are still pending.
+
+The packed Native adapter regression in `tests/record-renderer.fixture.jsx` passes under TRUSTED
+and SAFE: open line 1 displays 120 while accepted rows remain 110/220 and root 330; Cancel/Discard
+preserves them; root preparation still requires review of both child changes; saving only line 1
+then accepts 120/220 and root 340. Caller inputs remain unchanged. The focused run passed 2 cases;
+the existing 17 adapter cases were not rerun. Its JSON report is
+`.local-test-harnesses/form0-plan3-20261022/logs/native-open-child-acceptance.json`.
+The HTML platform stub emits a nested-button warning for Native's discard-dialog Pressables;
+this adapter-only warning does not establish an Android UI failure.
+
+The installed harness App was updated directly from the maintained fixture source, with no
+dependency installation or runtime candidate replacement. Its JSX parse and diff whitespace
+checks pass. Successful-save logging is limited to the small fixtures and occurs after storage
+completes; `acceptedChildTotals` exposes the root's working child values without opening editors.
