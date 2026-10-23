@@ -1,6 +1,7 @@
 # Plan 3 Android acceptance
 
-Actual device acceptance is pending. Adapter, Node and Chromium results do not establish Hermes
+Final Android acceptance is paused pending the separate view-evaluation policy discussion.
+The opening-controls patch is automated below; actual device acceptance is pending. Adapter, Node and Chromium results do not establish Hermes
 performance or device acceptance. iOS remains deferred. Use the packed core/Native candidates named
 in the Plan 3 verification ledger; their labels retain the last published versions until release.
 
@@ -43,18 +44,20 @@ are the concrete test inputs; record the actual client/runtime used.
 ## Walkthrough 1 — nested editing and accepted save/cancel isolation
 
 1. Tap **Nested editing**. Expect root `grand_total` 130; this starts a fresh unsaved fixture.
-2. Open the **projects** list using its row/open control.
-3. Tap **View** beside **P1**. With an editable root, this opens the child directly in edit mode;
-   there is no additional Edit step. Expect accepted task costs 10 and 20.
-4. Change **surcharge** to 5. Expect P1 `subtotal` 35; the app's root working total remains 130.
-5. Tap **Cancel** in P1.
-6. Confirm discarding edits if prompted. Expect the root working total remains 130.
-7. Tap **View** beside P1 again from the projects list.
-8. Set surcharge to 5.
-9. Save the child. Expect the root working total becomes 135.
-10. Tap **View** beside **P2**. Expect subtotal 100; P1's edit has not changed P2's tasks.
-11. Use **Cancel** to leave P2 without saving, discarding edits if prompted, then **Back** to the root.
-12. Submit the root. Expect successful persistence and no row-ID/order changes. The next walkthrough
+2. Open the **projects** list using its View control.
+3. Tap **View** beside **P1**. Expect view mode and accepted task costs 10 and 20.
+4. Tap **Edit** in P1.
+5. Change **surcharge** to 5. Expect P1 `subtotal` 35; the root working total remains 130.
+6. Tap **Cancel** in P1.
+7. Confirm discarding edits if prompted. Expect the root working total remains 130.
+8. Tap **View** beside P1 again from the projects list.
+9. Tap **Edit**.
+10. Set surcharge to 5.
+11. Save the child. Expect the root working total becomes 135.
+12. Tap **View** beside **P2**. Expect view mode and subtotal 100; P1 has not changed P2's tasks.
+13. Use **Cancel** to leave P2 without saving; discard the local calculation if prompted.
+14. Use **Back** to return to the root form.
+15. Submit the root. Expect successful persistence and no row-ID/order changes. The next walkthrough
     starts its own fixture; do not carry this fixture into it.
 
 The persistence status appears only after the SQLite write succeeds. For these small fixtures the
@@ -75,8 +78,9 @@ opening a child. These are accepted in the root's working tree, not necessarily 
 | Each child opened for editing, before saving | 100 / 120             | 200 / 240             | 330        |
 | Root refresh selected for all children       | 100 / 120             | 200 / 240             | 360        |
 
-The row's **View** button opens an editor when the parent is editable. Its calculation uses current
-parent inputs immediately, as it did before Plan 3; opening it does not accept that calculation into
+The row's **View** button now opens view mode, with **Edit** when its parent permits editing.
+Calculations still use current parent inputs immediately; the follow-up evaluation policy is pending.
+Opening the row does not accept that calculation into
 the root. **Cancel**, followed by **Discard** if prompted, leaves accepted totals unchanged. **Save**
 accepts that row's new calculation: saving only line 1 produces root 340, only line 2 produces 350.
 If you saved any children while inspecting, reset the fixture before continuing below. This
@@ -132,3 +136,17 @@ The installed harness App was updated directly from the maintained fixture sourc
 dependency installation or runtime candidate replacement. Its JSX parse and diff whitespace
 checks pass. Successful-save logging is limited to the small fixtures and occurs after storage
 completes; `acceptedChildTotals` exposes the root's working child values without opening editors.
+
+## Opening-controls patch — 23 October
+
+Existing rows now open in view mode on web and Native, with Edit when their containing record
+permits it. New rows start editing. `repeatableEntryMode="edit"` selects direct editing in both
+renderers; it cannot bypass a read-only parent. Browsing remains available through nested read-only
+records. This patch preserves evaluations in view mode, including the 120/240 display example.
+The accepted-snapshot view policy and load-event behavior will be discussed before final device
+acceptance. The earlier walkthrough 1 report applies to the previous candidate.
+
+The updated candidate passes all 23 Native adapter cases, 54 Node tests and public declarations.
+Opening controls also pass actual Chromium main-thread/worker interactions. Exact archives and
+provenance are in `form0-core/analyses/OPENING_CONTROLS_VERIFICATION.md`; previous SDK 58 bundle
+exports and the earlier physical-device walkthrough apply to their original candidates.

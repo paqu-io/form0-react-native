@@ -65,6 +65,9 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       fireEvent.click(screen.getAllByText('View')[0]);
       expect(await screen.findByDisplayValue('100')).toBeTruthy();
       expect(await screen.findByText('120')).toBeTruthy();
+      expect(screen.getByDisplayValue('100').readOnly).toBe(true);
+      expect(screen.queryByText('Save')).toBeNull();
+      fireEvent.click(screen.getByText('Edit'));
       expect(screen.getByText('Save')).toBeTruthy();
       const assertAccepted = () => {
         const snapshot = snapshots.mock.calls.at(-1)[0];
@@ -101,6 +104,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       });
       fireEvent.click(screen.getAllByText('View')[0]);
       await screen.findByDisplayValue('100');
+      fireEvent.click(screen.getByText('Edit'));
       fireEvent.click(screen.getByText('Save'));
       await waitFor(() => {
         const snapshot = snapshots.mock.calls.at(-1)[0];
@@ -108,6 +112,96 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         expect(snapshot.repeatable.lines.map((row) => row.values.total)).toEqual([120, 220]);
       });
       expect(seed).toEqual(original);
+    }
+  );
+  testCase(
+    'Native opening controls preserve row classification and explicit direct editing',
+    async () => {
+      for (const entryMode of ['readonly', 'edit']) {
+        const form = schema();
+        form.form.elements[2].elements.push(field('TextField', 'row_trace'));
+        form.form.events = {
+          code: [
+            "ON('load-repeatable', 'lines', function () { SETVALUE('row_trace', 'load'); });",
+            "ON('edit-repeatable', 'lines', function () { SETVALUE('row_trace', $row_trace + ':edit'); });",
+            "ON('new-repeatable', 'lines', function () { SETVALUE('row_trace', $row_trace + ':new'); });",
+          ].join('\n'),
+        };
+        render(
+          <FormRenderer
+            schema={form}
+            initialSnapshot={initial()}
+            repeatableEntryMode={entryMode}
+            engineOptions={{
+              security,
+              diagnostics: { console: false },
+              events: { lifecycle: true, recordKind: 'existing' },
+            }}
+          />
+        );
+        fireEvent.click(await screen.findByText('lines'));
+        fireEvent.click(screen.getByText('View'));
+        await screen.findByText('lines 1');
+        fireEvent.click(screen.getAllByText('View')[0]);
+        const input = await screen.findByDisplayValue('100');
+        expect(input.readOnly).toBe(entryMode === 'readonly');
+        if (entryMode === 'readonly') {
+          await screen.findByDisplayValue('load');
+          expect(screen.queryByText('Save')).toBeNull();
+          fireEvent.click(screen.getByText('Edit'));
+        }
+        await screen.findByDisplayValue('load:edit');
+        expect(input.readOnly).toBe(false);
+        fireEvent.click(screen.getByText('Cancel'));
+        await screen.findByText('Discard');
+        fireEvent.click(screen.getByText('Discard'));
+        await screen.findByText('lines 1');
+        fireEvent.click(screen.getByText('+ Add'));
+        await screen.findByDisplayValue('load:new');
+        expect(screen.queryByText('Edit')).toBeNull();
+        expect(screen.getByText('Save')).toBeTruthy();
+        cleanup();
+      }
+    }
+  );
+  testCase(
+    'Native read-only ancestors permit nested browsing and prevent editing overrides',
+    async () => {
+      for (const rootReadOnly of [true, false]) {
+        const form = schema();
+        form.form.elements[2].elements.push(repeatable('children', [field('TextField', 'detail')]));
+        const seed = initial();
+        seed.repeatable.lines[0].repeatable = {
+          children: [{ id: 0, values: { detail: 'Nested' } }],
+        };
+        render(
+          <FormRenderer
+            schema={form}
+            initialSnapshot={seed}
+            mode={rootReadOnly ? 'readonly' : 'edit'}
+            repeatableEntryMode={rootReadOnly ? 'edit' : 'readonly'}
+            engineOptions={{ security, diagnostics: { console: false } }}
+          />
+        );
+        fireEvent.click(await screen.findByText('lines'));
+        fireEvent.click(screen.getByRole('button', { name: 'View', exact: true }));
+        await screen.findByText('lines 1');
+        fireEvent.click(screen.getAllByText('View')[0]);
+        expect((await screen.findByDisplayValue('100')).readOnly).toBe(true);
+        expect(Boolean(screen.queryByRole('button', { name: 'Edit', exact: true }))).toBe(
+          !rootReadOnly
+        );
+        fireEvent.click(screen.getByText('children'));
+        fireEvent.click(screen.getByRole('button', { name: 'View', exact: true }));
+        await screen.findByText('children 1');
+        expect(screen.queryByRole('button', { name: 'Remove', exact: true })).toBeNull();
+        expect(screen.queryByRole('button', { name: '+ Add', exact: true })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'View', exact: true }));
+        expect((await screen.findByDisplayValue('Nested')).readOnly).toBe(true);
+        expect(screen.queryByRole('button', { name: 'Edit', exact: true })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Save', exact: true })).toBeNull();
+        cleanup();
+      }
     }
   );
   testCase(

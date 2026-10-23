@@ -758,6 +758,7 @@ function FormRendererContent({
   forceShowNavigationPanel = false,
   fieldKeyMode = DEFAULT_FIELD_KEY_MODE,
   mode: modeProp = 'edit',
+  repeatableEntryMode = 'readonly',
   keyboardScrollOffset = DEFAULT_SCROLL_OFFSET,
   debug = false,
   onSchemaReady,
@@ -2636,7 +2637,7 @@ function FormRendererContent({
               }}
               onRemove={(instanceId) => requestRepeatableRemoval(screen, instanceId)}
               getEntryTitle={getRepeatableEntryTitle}
-              readOnly={isReadOnly}
+              readOnly={isReadOnly || screen.controller?.canEdit?.() === false}
               theme={theme}
             />
           ) : (
@@ -2651,7 +2652,8 @@ function FormRendererContent({
               renderElements={renderElements}
               labelPosition={labelPosition}
               labelWidthPercent={labelWidthPercent}
-              readOnly={isReadOnly}
+              readOnly={isReadOnly || screen.controller?.canEdit?.() === false}
+              initialMode={repeatableEntryMode}
               validateBeforeSave
               keyboardScrollOffset={keyboardScrollOffset}
               theme={theme}
@@ -3380,12 +3382,20 @@ function RepeatableEditorScreen({
   renderElements,
   labelPosition,
   labelWidthPercent,
-  readOnly,
+  readOnly: parentReadOnly,
+  initialMode = 'readonly',
   validateBeforeSave = true,
   keyboardScrollOffset,
   theme,
   forceShowNavigationPanel = false,
 }) {
+  const [entryMode, setEntryMode] = useState(() =>
+    screen.mode === 'create' || initialMode === 'edit' ? 'edit' : 'readonly'
+  );
+  const readOnly = parentReadOnly || entryMode === 'readonly';
+  const enterEntryEditMode = useCallback(() => {
+    if (!parentReadOnly) setEntryMode('edit');
+  }, [parentReadOnly]);
   const editorScroll = useKeyboardAwareScroll({
     scrollOffset: keyboardScrollOffset,
   });
@@ -3478,6 +3488,7 @@ function RepeatableEditorScreen({
   const controller = useMemo(
     () => ({
       diagnosticInstancePath: screen.diagnosticInstancePath,
+      canEdit: () => !readOnly,
       eventDispatch: (...args) => rowDispatchRef.current?.dispatch(...args),
       eventInteraction: (...args) => rowDispatchRef.current?.interaction(...args),
       repeatableMetadata,
@@ -3491,6 +3502,7 @@ function RepeatableEditorScreen({
     }),
     [
       screen.diagnosticInstancePath,
+      readOnly,
       addRepeatableInstance,
       buildParentValues,
       getRepeatableInstance,
@@ -3795,6 +3807,7 @@ function RepeatableEditorScreen({
     forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || showEntryValidationList;
 
   const handleSave = async () => {
+    if (readOnly) return;
     if (rowEvents.record || rowEvents.lifecycle) {
       setSubmitCount((count) => count + 1);
       const closeTarget = rowEvents.captureClose();
@@ -3851,14 +3864,21 @@ function RepeatableEditorScreen({
           onPress: handleCancelRequest,
         };
   const rightAction =
-    !readOnly && activeDrilldownPath.length === 0
+    readOnly && !parentReadOnly
       ? {
-          id: 'save',
-          label: 'Save',
-          variant: 'primary',
-          onPress: handleSave,
+          id: 'enter-entry-edit-mode',
+          label: 'Edit',
+          variant: 'edit',
+          onPress: enterEntryEditMode,
         }
-      : null;
+      : !readOnly && activeDrilldownPath.length === 0
+        ? {
+            id: 'save',
+            label: 'Save',
+            variant: 'primary',
+            onPress: handleSave,
+          }
+        : null;
   const headerTitle = activeDrilldownSectionInfo?.label || entryTitle;
   const renderOptions = {
     state: { values, visible, required, read_only, errors },

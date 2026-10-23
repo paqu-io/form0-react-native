@@ -273,3 +273,16 @@ Native File/Blob media handles retain standard metadata and immutable binary con
 on these handles are outside native serialization; attach custom metadata to the surrounding plain
 record object. Async schema handlers remain unsupported. The form0-core 0.5.1 minimum includes
 the media compatibility correction.
+
+## Repeatable entry opening mode
+
+`repeatableEntryMode` accepts `'readonly'` (default) or `'edit'` for existing rows at every nesting
+level. View mode offers Edit when the containing record permits editing. New rows start in edit
+mode. Read-only parents allow browsing descendants but prevent editing, adding and removing them;
+`repeatableEntryMode="edit"` does not override that restriction. This is a renderer option, with no
+schema or saved-record change.
+
+Opening modes control editing and lifecycle entry. Calculations, conditions and intrinsic
+validation still evaluate when a row is viewed. With managed lifecycle enabled, opening runs
+`load-repeatable`; entering editing runs `edit-repeatable` or `new-repeatable` according to the
+row's classification. Viewing accepted values without recalculation is a separate pending policy.

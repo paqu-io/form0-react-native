@@ -262,6 +262,8 @@ export type FormRendererProps = {
   onSnapshotChange?: (snapshot: FormRendererSnapshot, meta: FormRendererSnapshotChangeMeta) => void;
   fieldKeyMode?: 'prefer-key' | 'data-name';
   mode?: 'edit' | 'readonly';
+  /** Opening mode for existing repeatable rows; new rows always start in edit mode. */
+  repeatableEntryMode?: 'edit' | 'readonly';
   keyboardScrollOffset?: number;
   debug?: boolean;
   onSchemaReady?: (schema: Record<string, any>) => void;
