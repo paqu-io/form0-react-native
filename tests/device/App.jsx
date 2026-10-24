@@ -113,7 +113,7 @@ export default function App() {
       if (result.eligible) prepared.current = { target, result };
       setStatus(
         JSON.stringify({
-          revision: 'native-owned-tree-signatures',
+          revision: 'native-throughput-bindings',
           status: result.status,
           eligible: result.eligible,
           elapsedMs: Math.round(clock() - start),
