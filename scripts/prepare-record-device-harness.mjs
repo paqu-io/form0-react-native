@@ -94,6 +94,19 @@ for (const file of ["App.jsx", "record-fixtures.js", "preparation-profile.js"])
     path.join(repo, "tests/device", file),
     path.join(target, file),
   );
+// The diagnostic uses the same private host scheduler as the installed renderer.
+await copyFile(
+  path.join(repo, "src/utils/record-scheduling.js"),
+  path.join(target, "record-scheduling.js"),
+);
+const profilePath = path.join(target, "preparation-profile.js");
+await writeFile(
+  profilePath,
+  (await readFile(profilePath, "utf8")).replace(
+    "../../src/utils/record-scheduling.js",
+    "./record-scheduling.js",
+  ),
+);
 for (const file of ["calculation-fixtures.js", "complex-record-fixture.js"])
   await copyFile(
     path.join(workspace, "form0-core/tests/helpers", file),

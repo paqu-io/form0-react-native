@@ -1,4 +1,5 @@
 import { createRecordEvaluator } from 'form0-core';
+import { createRecordScheduler } from '../../src/utils/record-scheduling.js';
 
 const clock = () => globalThis.performance?.now?.() ?? Date.now();
 const timerYield = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -9,6 +10,7 @@ function checkCancellation(signal) {
 
 /** Diagnostic harness only: report timings, never record values or executable proposals. */
 export async function profilePreparation({ schema, snapshot, security, signal }) {
+  const scheduler = createRecordScheduler({ signal });
   const timerSamples = [];
   for (let index = 0; index < 20; index++) {
     checkCancellation(signal);
@@ -39,7 +41,7 @@ export async function profilePreparation({ schema, snapshot, security, signal })
           const before = clock();
           maxWorkSliceMs = Math.max(maxWorkSliceMs, before - last);
           yields++;
-          await timerYield();
+          await scheduler.yieldToHost();
           const after = clock();
           yieldWaitMs += after - before;
           last = after;
@@ -63,6 +65,7 @@ export async function profilePreparation({ schema, snapshot, security, signal })
     }
   }
   return {
+    scheduler: scheduler.strategy,
     timerMeanMs: round(timerSamples.reduce((sum, value) => sum + value, 0) / timerSamples.length),
     timerMaxMs: round(Math.max(...timerSamples)),
     samples,

@@ -147,6 +147,7 @@ export default function App() {
       });
       const report = {
         type: 'preparation-profile',
+        revision: 'native-idle-layout-cache',
         rows: 200,
         dev: typeof __DEV__ !== 'undefined' && __DEV__,
         hermes: Boolean(globalThis.HermesInternal),

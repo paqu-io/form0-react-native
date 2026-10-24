@@ -1,5 +1,6 @@
 import { createRecordEvaluator } from 'form0-core';
 import { copyEventData, eventDataSignature } from './managed-events.js';
+import { createRecordScheduler } from './record-scheduling.js';
 
 const collectionSchemas = new WeakMap();
 export const hasRecordCollections = (schema) => {
@@ -40,12 +41,7 @@ export function compactRecordTree(record, root = true) {
   return record;
 }
 
-// Schedule a fresh browser task without nested timer delays or prioritizing continuations
-// ahead of queued cancellation messages. Other hosts keep core's timer fallback.
-const hostScheduling = () =>
-  typeof globalThis.scheduler?.postTask === 'function'
-    ? { yieldToHost: () => globalThis.scheduler.postTask(() => {}, { priority: 'user-visible' }) }
-    : {};
+const hostScheduling = (options) => ({ yieldToHost: createRecordScheduler(options).yieldToHost });
 
 /** One backend per schema/configuration lifetime; reports and reviews never enter renderer state. */
 export function createRecordBackend(config) {
@@ -62,9 +58,12 @@ export function createRecordBackend(config) {
   };
   return {
     evaluateScope: (snapshot, options) =>
-      get().evaluateScope(snapshot, { ...hostScheduling(), ...options }),
+      get().evaluateScope(snapshot, { ...hostScheduling(options), ...options }),
     async prepare(snapshot, options) {
-      const result = await get().prepareSubmission(snapshot, { ...hostScheduling(), ...options });
+      const result = await get().prepareSubmission(snapshot, {
+        ...hostScheduling(options),
+        ...options,
+      });
       changes = result.changes || [];
       pendingSource = result.status === 'requires_decision' ? snapshot : null;
       const { proposal: _proposal, changes: _changes, ...compact } = result;
