@@ -182,6 +182,13 @@ its start script clears Metro's cache. Do not rerun the harness generator or rei
 
 ## Pixel 8a performance follow-up
 
+24 October update: the maintainer's baseline profile confirms Expo Go 58.0.5, Android API 37,
+RN 0.88.0, Hermes and development mode. In the warm managed run, 19.7 of 28.1 seconds is explicit
+yield waiting; 8.4 seconds is outside yields. Core now reuses argument-layout preparation and
+Native uses the host idle-task queue while retaining the 8 ms budget and cancellation. Updated
+desktop measurements and full automated verification are in the investigation document above.
+The actual Pixel improvement is not yet verified.
+
 Review actions now use the header's themed buttons; child Edit uses the same Pencil icon as root.
 The installed candidate is recorded in `logs/android-profile-candidate.json` in the active harness.
 Walkthroughs 1 and 2 retain their accepted behavioral evidence; confirm the cosmetic adjustment when
@@ -193,7 +200,9 @@ convenient. Performance remains open, so another long 2,000-row run is not reque
 3. Leave SAFE off to match the original measurement and keep DevTools closed.
 4. Tap **Profile preparation (200)**. This uses a separate synthetic record and does not save or
    change the displayed form. It runs cold/warm preparations with managed validation off and on.
-5. Copy the selectable JSON in the status area; it is scrollable. Share it with the displayed
+5. Check that the result includes `revision: "native-idle-layout-cache"` and
+   `scheduler: "idle-callback"`; otherwise restart Metro with its existing clear-cache command.
+6. Copy the selectable JSON in the status area; it is scrollable. Share it with the displayed
    runtime details and Expo Go client/build version. It is also logged under
    `[form0 acceptance] Preparation profile` if console forwarding is available.
 
@@ -203,3 +212,6 @@ identifies scheduling overhead; a high compute share calls for a synchronous-wor
 comparison with/without managed validation identifies the cost of participating closed-row handlers.
 Cold/warm differences identify cached setup. These are diagnostic comparisons, not release-build
 or full-controller performance acceptance. Cancel preparation also cancels this diagnostic.
+The updated diagnostic uses the renderer's actual scheduler for all four preparations; its separate
+twenty-timer calibration still measures the legacy fallback. Current archives and hashes are in
+`logs/android-performance-candidates.json`; prior candidates and results are preserved.
