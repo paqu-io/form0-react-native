@@ -2,18 +2,17 @@
 
 Accepted-snapshot viewing, load permissions and event.mode are implemented; automated evidence
 and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
-The maintainer reports walkthroughs 1 and 2 and prompt large-form cancellation passing on Pixel
-8a / Android API 37, Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The most recent physical
-`native-responsive-serialization` run takes 1,682 / 12,457 ms for 200 / 2,000 rows, with observed JS
-gaps 152 / 325 ms. Both complete eligible with no issues. The large gap improved from 949 ms;
-performance sign-off remains open. See the latest section below for the **single remaining timing
-check** with the newer `native-owned-tree-signatures` candidate. Older sections retain historical
-diagnostic instructions and candidate provenance; do not rerun them to resume acceptance.
+Walkthroughs 1/2 and prompt large-form cancellation pass on the Pixel 8a / Android API 37,
+Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The latest physical 2,000-row result is
+12,400 ms, observed JS gap 294 ms, completed/eligible/no issues. A bounded throughput fix now passes
+full automated checks and awaits one physical comparison. Installed revision:
+**`native-throughput-bindings`**. Use the latest section below; earlier instructions and candidate
+sections are historical and should not be repeated to resume acceptance.
 
-The independent SDK 58 harness now contains the new candidate with installed source-byte parity.
-No SDK/dependency installation is needed. Adapter, Node and Chromium results do not establish Hermes
-performance; iOS remains deferred. See `form0-core/analyses/ANDROID_PREPARATION_INVESTIGATION.md`
-for measurements and limits. Archive labels retain last published versions until maintainer release.
+The existing independent SDK 58 harness contains the new packed core with exact source-byte parity.
+There is no dependency reinstall or SDK change. Real desktop Chromium tests cover main-thread and
+actual-worker execution, but neither those nor the Native adapter establish physical Hermes timing.
+iOS remains deferred. Current evidence: `form0-core/analyses/ANDROID_PREPARATION_INVESTIGATION.md`.
 
 ## Prepare and start
 
@@ -283,3 +282,42 @@ Do not repeat walkthroughs 1/2, the Profile preparation diagnostic or cancellati
 check. Earlier prompt cancellation remains accepted. No cold/warm classification is assumed for
 this single physical sample. Performance and Plan 3 sign-off remain open pending this result;
 iOS acceptance, production Reform adoption and dependency-exception remediation stay separate.
+
+
+## Current focused comparison — throughput bindings, 24 October
+
+The owned-tree candidate completed on the Pixel in 12,400 ms with a 294 ms observed gap, eligible
+and without issues. The next candidate reduces repeated bindings for proven primitive expressions
+and redundant copies of fresh private event contexts. It caches metadata only. Current values,
+calculation order, EVAL/dynamic fallback, security checks, handler registrations and row validation
+frequency remain preserved by regression tests. No renderer runtime source changed in this pass.
+
+The paired complete managed core workload improves 27%. Actual desktop Chromium 2,000-row controller
+samples are 1.11–1.13 s main-thread / 1.05 s actual worker. The production Native HTML adapter also
+improves throughput; its final warmed maximum host task is 66 ms. These are not Hermes predictions.
+Full core/React/Native/CLI/browser/Builder/type/localization checks pass. The investigated earlier
+worker transition exists in the baseline too; the driver now awaits both calculation and edit-event
+completion while retaining final-value assertions. No lifecycle runtime behavior was changed.
+
+The final manifests are `logs/throughput-candidates.json` and `throughput-device-candidates.json` in
+the retained active harness. New core hash:
+`d2eec93bf76e746825c06448af1f274fdb3ab73670f1ac954d99227d642cd651`.
+React/Native source archive bytes remain unchanged; the fixture App revision is updated. SDK versions
+remain Expo 58.0.17 / RN 0.88.0 / React 19.3.0. Previous candidate archives and all physical reports
+remain preserved. No new dependency tree or folder cleanup is needed for this comparison.
+
+1. Restart Metro using the usual cache-clearing command, then reload Expo Go.
+2. Keep SAFE off and DevTools closed, matching the prior runs.
+3. Tap **Large 2,000** and let its initial rendering settle.
+4. Tap **Programmatic prepare** once and wait for the result.
+5. Confirm `revision: "native-throughput-bindings"`; share the displayed JSON and whether the
+   remaining pause is noticeable. If the revision is older, reload the existing Metro app after
+   its restart; do not reinstall dependencies.
+
+Do not repeat walkthroughs 1/2, the core-only Profile diagnostic or cancellation solely for this
+checkpoint. Their physical acceptance is preserved. Stop further optimization edits until this
+comparison: the next decision depends on an actual phone gain, its remaining cost and behavioral
+risk. Approximately 20% repeatable improvement was the automated checkpoint criterion; it is not
+an Android SLA or permission to finalize Plan 3 without its remaining performance decision.
+
+Core implementation: `ea9adf0`; Native fixture revision: `15ac0a1`, both on existing development branches.
