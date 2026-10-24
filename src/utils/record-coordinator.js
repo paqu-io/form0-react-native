@@ -1,5 +1,5 @@
 import { createRecordEvaluator } from 'form0-core';
-import { copyEventData, eventDataSignature } from './managed-events.js';
+import { copyEventData, eventDataSignature, ownedCollectionSignature } from './managed-events.js';
 import { createRecordScheduler } from './record-scheduling.js';
 
 const collectionSchemas = new WeakMap();
@@ -41,15 +41,34 @@ export function compactRecordTree(record, root = true) {
   return record;
 }
 
-const hostScheduling = (options) => ({ yieldToHost: createRecordScheduler(options).yieldToHost });
+const hostScheduling = (options) => ({
+  yieldToHost: createRecordScheduler(options).yieldToHost,
+});
+
+// Bound host work around selection, hooks and serialization as well as engine tasks.
+function preparationCheckpoint(options) {
+  const clock = () => globalThis.performance?.now?.() ?? Date.now();
+  const yieldToHost =
+    hostScheduling(options).yieldToHost || (() => new Promise((resolve) => setTimeout(resolve, 0)));
+  let started = clock();
+  return async () => {
+    if (clock() - started < 8) return;
+    await yieldToHost();
+    started = clock();
+  };
+}
 
 /** One backend per schema/configuration lifetime; reports and reviews never enter renderer state. */
 export function createRecordBackend(config) {
   let evaluator;
+  let generation = 0;
   let changes = [];
   let pendingSource = null;
   const get = () => {
-    evaluator ||= createRecordEvaluator({ ...config, diagnostics: { console: false } });
+    evaluator ||= createRecordEvaluator({
+      ...config,
+      diagnostics: { console: false },
+    });
     if (typeof evaluator.evaluateScope !== 'function')
       throw new Error(
         'This consumer requires the coordinated form0-core release containing evaluateScope(). Upgrade core before using this consumer.'
@@ -60,10 +79,13 @@ export function createRecordBackend(config) {
     evaluateScope: (snapshot, options) =>
       get().evaluateScope(snapshot, { ...hostScheduling(options), ...options }),
     async prepare(snapshot, options) {
+      const attempt = ++generation;
       const result = await get().prepareSubmission(snapshot, {
         ...hostScheduling(options),
         ...options,
       });
+      if (attempt !== generation)
+        return fail('stale_preparation', 'This preparation has been released.');
       changes = result.changes || [];
       pendingSource = result.status === 'requires_decision' ? snapshot : null;
       const { proposal: _proposal, changes: _changes, ...compact } = result;
@@ -91,6 +113,7 @@ export function createRecordBackend(config) {
       };
     },
     release() {
+      generation++;
       changes = [];
       if (evaluator && pendingSource) {
         const source = pendingSource;
@@ -119,7 +142,20 @@ function overlay(tree, path, data) {
   if (index > rows.length) throw new Error('The positional editor no longer exists.');
   const base = rows[index] || (part.identity === 'id' ? { id: part.instanceId } : {});
   rows[index] = overlay(base, rest, data);
-  return { ...tree, repeatable: { ...tree.repeatable, [part.repeatableKey]: rows } };
+  return {
+    ...tree,
+    repeatable: { ...tree.repeatable, [part.repeatableKey]: rows },
+  };
+}
+
+/** Renderer adapters replace owned collection trees; mutable values/metadata stay freshly checked. */
+export function createEditorSignature(read) {
+  return () => {
+    const { repeatable, ...record } = read();
+    const collection = ownedCollectionSignature(repeatable);
+    const current = eventDataSignature(record) ?? '';
+    return `${current.length}:${current}${collection}`;
+  };
 }
 
 /** Private portable host coordination. Core owns evaluation; host adapters own operations/storage. */
@@ -150,7 +186,11 @@ export function createRecordCoordinator({
     }
   };
   const local = () =>
-    (backend ||= createRecordBackend({ schema: configuration, helpers, security }));
+    (backend ||= createRecordBackend({
+      schema: configuration,
+      helpers,
+      security,
+    }));
   const options = () => getOptions().submissionOptions || {};
   const root = () => [...editors.values()].find((entry) => !entry.path.length);
   const capture = (path = []) => {
@@ -167,11 +207,15 @@ export function createRecordCoordinator({
         snapshot = overlay(snapshot, editor.path, editor.read());
     return snapshot;
   };
-  const signature = () =>
-    eventDataSignature({
-      snapshot: capture(),
-      policy: { mode: options().mode ?? 'automatic', allowRetain: options().allowRetain === true },
+  const signature = () => {
+    const editor = root();
+    const record = editor?.signature ? editor.signature() : eventDataSignature(capture());
+    const policy = eventDataSignature({
+      mode: options().mode ?? 'automatic',
+      allowRetain: options().allowRetain === true,
     });
+    return `${record.length}:${record}${policy}`;
+  };
   const selection = async (result) => {
     if (result.snapshot && ['ready', 'blocked'].includes(result.status)) {
       if (result.changeCount) notify({ type: 'selection' });
@@ -221,6 +265,7 @@ export function createRecordCoordinator({
     freshness: () => copyEventData(savedFreshness),
     capture,
     signature,
+    preparedSignature: () => attempt?.signature || null,
     bind(path, adapter) {
       const key = JSON.stringify(path);
       const entry = { path: copyEventData(path), ...adapter };
@@ -230,9 +275,13 @@ export function createRecordCoordinator({
       };
     },
     async evaluate(path = [], evaluationOptions = {}) {
-      return local().evaluateScope(capture(path), { ...evaluationOptions, instancePath: path });
+      return local().evaluateScope(capture(path), {
+        ...evaluationOptions,
+        instancePath: path,
+      });
     },
     async prepare(request, { saveHook, serialize, managedEvents = false } = {}) {
+      const checkpoint = preparationCheckpoint({ signal: request.signal });
       if ([...editors.values()].some((entry) => entry.path.length))
         return fail(
           'pending_editor',
@@ -272,13 +321,24 @@ export function createRecordCoordinator({
       }
       const active = attempt;
       active.phase = 'preparing';
+      const checkCurrent = async () => {
+        await checkpoint();
+        if (active !== attempt)
+          return fail('stale_preparation', 'This save preparation has ended.');
+        if (request.signal?.aborted)
+          return finish({ status: 'cancelled', eligible: false, issues: [] });
+        if (active.signature !== signature())
+          return finish(fail('values_changed', 'Values changed during preparation; retry.'));
+        return null;
+      };
+      const captureFailure = await checkCurrent();
+      if (captureFailure) return captureFailure;
       let result = await local().prepare(active.source, {
         ...settings,
         decision: request.decision,
       });
-      if (active !== attempt) return fail('stale_preparation', 'This save preparation has ended.');
-      if (active.signature !== signature())
-        return finish(fail('values_changed', 'Values changed during preparation; retry.'));
+      const initialFailure = await checkCurrent();
+      if (initialFailure) return initialFailure;
       active.result = result;
       active.reviewId = result.reviewId;
       if (result.status === 'requires_decision') {
@@ -292,19 +352,24 @@ export function createRecordCoordinator({
       if (!result.eligible) return finish(result);
       if (managedEvents && !active.saveRan && saveHook) {
         active.saveRan = true;
-        const before = signature();
+        const hookFailure = await checkCurrent();
+        if (hookFailure) return hookFailure;
+        const before = active.signature;
         const saved = await saveHook(result.validationSummary);
+        await checkpoint();
+        if (active !== attempt)
+          return fail('stale_preparation', 'This save preparation has ended.');
+        if (request.signal?.aborted)
+          return finish({ status: 'cancelled', eligible: false, issues: [] });
         if (saved?.issues?.length) return finish({ ...saved, eligible: false, payload: null });
         if (before !== signature()) {
           active.source = capture();
           active.signature = signature();
           result = await local().prepare(active.source, settings);
-          if (active !== attempt)
-            return fail('stale_preparation', 'This save preparation has ended.');
+          const refreshFailure = await checkCurrent();
+          if (refreshFailure) return refreshFailure;
           active.result = result;
           active.reviewId = result.reviewId;
-          if (active.signature !== signature())
-            return finish(fail('values_changed', 'Values changed during preparation; retry.'));
           if (result.status === 'requires_decision') {
             active.phase = 'review';
             return descriptor(result);
@@ -316,14 +381,24 @@ export function createRecordCoordinator({
       }
       if (request.signal?.aborted)
         return finish({ status: 'cancelled', eligible: false, issues: [] });
-      const { payload, meta } = await serialize(
-        result.snapshot,
-        request.intent,
-        result.validationSummary
-      );
-      if (active !== attempt) return fail('stale_preparation', 'This save preparation has ended.');
-      if (active.signature !== signature())
-        return finish(fail('values_changed', 'Values changed during serialization; retry.'));
+      const serializationFailure = await checkCurrent();
+      if (serializationFailure) return serializationFailure;
+      let serialized;
+      try {
+        serialized = await serialize(result.snapshot, request.intent, result.validationSummary, {
+          signal: request.signal,
+          ...hostScheduling({ signal: request.signal }),
+        });
+      } catch (error) {
+        if (active !== attempt)
+          return fail('stale_preparation', 'This save preparation has ended.');
+        if (request.signal?.aborted || error?.name === 'AbortError' || error?.code === 'cancelled')
+          return finish({ status: 'cancelled', eligible: false, issues: [] });
+        throw error;
+      }
+      const { payload, meta } = serialized;
+      const deliveryFailure = await checkCurrent();
+      if (deliveryFailure) return deliveryFailure;
       if (request.signal?.aborted)
         return finish({ status: 'cancelled', eligible: false, issues: [] });
       active.phase = 'prepared';
@@ -334,7 +409,11 @@ export function createRecordCoordinator({
         eligible: true,
         preparationId: active.id,
         payload,
-        meta: { ...meta, preparationId: active.id, freshness: copyEventData(result.freshness) },
+        meta: {
+          ...meta,
+          preparationId: active.id,
+          freshness: copyEventData(result.freshness),
+        },
         freshness: copyEventData(result.freshness),
         validationSummary: result.validationSummary,
         changeCount: result.changeCount,
@@ -372,18 +451,20 @@ export function createRecordCoordinator({
       backend?.release?.();
       attempt = null;
       notify({ type: 'acknowledged' });
-      return { status: 'completed', issues: [], freshness: copyEventData(savedFreshness) };
+      return {
+        status: 'completed',
+        issues: [],
+        freshness: copyEventData(savedFreshness),
+      };
     },
     changed() {
-      if (
-        !applying &&
-        attempt &&
-        attempt.phase !== 'preparing' &&
-        attempt.signature !== signature()
-      ) {
+      if (applying || !attempt || attempt.phase === 'preparing') return null;
+      const current = signature();
+      if (attempt.signature !== current) {
         attempt = null;
         backend?.release?.();
       }
+      return current;
     },
     cancelPreparation() {
       attempt = null;

@@ -38,6 +38,40 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
     },
   });
   testCase(
+    'Native applying an evaluated submission does not replay root calculations',
+    async () => {
+      const form = schema();
+      form.form.elements.find((field) => field.data_name === 'grand').calculate =
+        "countRoot(REPEATABLESUM($lines, 'total'))";
+      let controller;
+      const countRoot = vi.fn((value) => value);
+      render(
+        <FormRenderer
+          schema={form}
+          initialSnapshot={initial()}
+          engineOptions={{
+            security,
+            helpers: { countRoot },
+            diagnostics: { console: false },
+            onEventController: (next) => (controller = next),
+          }}
+        />
+      );
+      await screen.findByText('330');
+      await waitFor(() => expect(controller).toBeTruthy());
+      const previous = countRoot.mock.calls.length;
+      let result;
+      await act(async () => {
+        result = await controller.prepareSave({ intent: 'submit' });
+      });
+      expect(result.eligible).toBe(true);
+      await screen.findByText('360');
+      expect(countRoot.mock.calls.length - previous).toBe(1);
+      expect(result.payload.form_values.grand).toBe(360);
+    }
+  );
+
+  testCase(
     'Native schema replacement refreshes calculations, collections and event registrations',
     async () => {
       const form = schema();

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createEventSession, eventDataSignature } from './utils/managed-events.js';
+import {
+  createEventSession,
+  eventDataSignature,
+  ownedCollectionSignature,
+} from './utils/managed-events.js';
 
 function notify(observer, value) {
   try {
@@ -55,12 +59,21 @@ export function useManagedEventScope({
   data,
   initialEventValues,
 }) {
+  // Collection state is owned by the renderer and replaced on edits/acceptance. Values
+  // below remain checked every render because engine value maps themselves are mutable.
+  const dataChangeSignature = useMemo(() => ownedCollectionSignature(data), [data]);
   const [findings, setFindings] = useState([]);
   const [preparationSummary, setPreparationSummary] = useState(null);
   const [preparationIssues, setPreparationIssues] = useState([]);
   const preparationSignature = useRef(null);
-  const propsRef = useRef({ mode, validate, serialize, data });
-  propsRef.current = { mode, validate, serialize, data };
+  const propsRef = useRef({
+    mode,
+    validate,
+    serialize,
+    data,
+    dataChangeSignature,
+  });
+  propsRef.current = { mode, validate, serialize, data, dataChangeSignature };
   const handleRef = useRef(null);
   const binding = getBinding();
   const scopeId = active ? binding?.scopeId : null;
@@ -75,17 +88,19 @@ export function useManagedEventScope({
       fieldKey,
       adapter: {
         ...captured,
-        dataSignature: () =>
-          eventDataSignature({
-            values: captured.snapshot()?.values,
-            data: propsRef.current.data,
-          }),
+        dataSignature: () => {
+          const values = eventDataSignature(captured.snapshot()?.values) ?? '';
+          return `${values.length}:${values}${propsRef.current.dataChangeSignature}`;
+        },
         canEdit: () => propsRef.current.mode === 'edit',
         validate: (state) => propsRef.current.validate(state),
-        serialize: (state, intent, summary) => propsRef.current.serialize(state, intent, summary),
+        serialize: (state, intent, summary, scheduling) =>
+          propsRef.current.serialize(state, intent, summary, scheduling),
         onValidation: (next) => setFindings(next),
         onPreparation: (result) => {
-          preparationSignature.current = captured.recordCoordinator?.signature();
+          preparationSignature.current =
+            captured.recordCoordinator?.preparedSignature() ||
+            captured.recordCoordinator?.signature();
           setPreparationSummary(result.validationSummary || null);
           setPreparationIssues(result.issues || []);
         },
@@ -137,10 +152,13 @@ export function useManagedEventScope({
   useEffect(() => {
     handleRef.current?.dataChanged();
     const coordinator = getBinding()?.recordCoordinator;
-    coordinator?.changed();
-    if (preparationSignature.current && preparationSignature.current !== coordinator?.signature())
+    const currentSignature = coordinator?.changed();
+    if (
+      preparationSignature.current &&
+      preparationSignature.current !== (currentSignature || coordinator?.signature())
+    )
       setPreparationSummary(null);
-  }, [eventDataSignature(data), eventDataSignature(binding?.snapshot()?.values)]);
+  }, [dataChangeSignature, eventDataSignature(binding?.snapshot()?.values)]);
   const dispatch = useCallback(
     (type, metadata = {}, targetField = fieldKey) =>
       handleRef.current?.dispatch(type, metadata, targetField) ||

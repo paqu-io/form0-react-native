@@ -1,6 +1,19 @@
 import React, { createContext, useEffect, useMemo, useRef } from 'react';
 import { eventDataSignature } from './utils/managed-events.js';
-import { createRecordCoordinator, applyRecordState } from './utils/record-coordinator.js';
+import {
+  createRecordCoordinator,
+  applyRecordState,
+  createEditorSignature,
+} from './utils/record-coordinator.js';
+
+const appliedTrees = new WeakMap();
+
+/** A prepared selection already contains this editor's evaluated state. Consume once on paint. */
+export function consumeAppliedRecordTree(engine, tree) {
+  const applied = appliedTrees.get(engine) === tree;
+  appliedTrees.delete(engine);
+  return applied;
+}
 
 export const RecordCoordinatorContext = createContext(null);
 
@@ -26,7 +39,10 @@ export function RecordCoordinatorProvider({
         helpers: engineOptions?.helpers,
         security: engineOptions?.security,
         getOptions: () => props.current,
-        seed: initialSnapshot || { values: initialValues || {}, repeatable: {} },
+        seed: initialSnapshot || {
+          values: initialValues || {},
+          repeatable: {},
+        },
       }),
     [schema, seedSignature, engineOptions?.helpers, engineOptions?.security]
   );
@@ -52,11 +68,14 @@ export function attachRecordEngine(engine, coordinator, path, source, report) {
   });
   const apply = async (snapshot) => {
     applyRecordState(engine, snapshot);
-    source?.setRepeatable?.(snapshot.repeatable || {});
+    const repeatable = snapshot.repeatable || {};
+    appliedTrees.set(engine, repeatable);
+    source?.setRepeatable?.(repeatable);
     source?.notify?.(engine);
   };
   const release = coordinator.bind(path, {
     read,
+    signature: createEditorSignature(read),
     apply,
     acknowledged: () => source?.acknowledged?.(),
   });
@@ -100,9 +119,12 @@ export function attachRecordWorker(client, coordinator, path, source = {}) {
   });
   const release = coordinator.bind(path, {
     read,
+    signature: createEditorSignature(read),
     async apply(snapshot) {
       await client.applyRecordState(snapshot);
-      source.setRepeatable?.(snapshot.repeatable || {});
+      const repeatable = snapshot.repeatable || {};
+      appliedTrees.set(client, repeatable);
+      source.setRepeatable?.(repeatable);
     },
     acknowledged: source.acknowledged,
   });

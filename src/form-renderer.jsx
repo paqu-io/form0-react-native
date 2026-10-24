@@ -1,5 +1,5 @@
 import { createInstancePathLabeler } from './utils/submission-presentation.js';
-import { RecordCoordinatorProvider, RecordCoordinatorContext } from './record-context.jsx';
+import { RecordCoordinatorProvider, RecordCoordinatorContext, consumeAppliedRecordTree } from './record-context.jsx';
 import { useSubmissionReview } from './use-submission-review.js';
 import { SubmissionReview, submissionMessages } from './submission-review.jsx';
 import { useContext } from 'react';
@@ -52,6 +52,7 @@ import {
 import { isFieldValueEmpty } from './helpers/is-field-value-empty.js';
 import {
   buildStructuredSubmission,
+  buildStructuredSubmissionAsync,
   buildSubmissionRawValues,
   buildSubmissionTimestampSnapshot,
   DEFAULT_FIELD_KEY_MODE,
@@ -1280,7 +1281,7 @@ function FormRendererContent({
         isRequired: (field) => Boolean(state.required[field.data_name]),
         getError: (field) => state.errors[field.data_name],
       }),
-    serialize: (state, intent, validationSummary) => {
+    serialize: async (state, intent, validationSummary, scheduling) => {
       const now = new Date().toISOString();
       touchUpdatedAt(now);
       const timestampSnapshot = buildSubmissionTimestampSnapshot(timestampsRef.current, now);
@@ -1303,13 +1304,16 @@ function FormRendererContent({
           },
           meta: { validationSummary, dirty: hasChanges },
         };
-      const submission = buildStructuredSubmission({
-        schema: finalSchema,
-        values: rawValues,
-        repeatable: currentRepeatable,
-        fieldKeyMode,
-        timestamps: timestampSnapshot,
-      });
+      const submission = await buildStructuredSubmissionAsync(
+        {
+          schema: finalSchema,
+          values: rawValues,
+          repeatable: currentRepeatable,
+          fieldKeyMode,
+          timestamps: timestampSnapshot,
+        },
+        scheduling
+      );
       return {
         payload: submission.structuredRecord,
         meta: {
@@ -1327,7 +1331,8 @@ function FormRendererContent({
   const recordCoordinator = useContext(RecordCoordinatorContext);
   const [persistedFreshness, setPersistedFreshness] = useState(initialFreshness || null);
   useEffect(() => {
-    if (recordCoordinator?.hasCollections()) rootRecordEngine?.eval();
+    const applied = consumeAppliedRecordTree(rootRecordEngine, repeatableState);
+    if (recordCoordinator?.hasCollections() && !applied) rootRecordEngine?.eval();
   }, [repeatableState, rootRecordEngine, recordCoordinator]);
   useEffect(() => {
     setPersistedFreshness(recordCoordinator?.freshness() || null);
@@ -1499,7 +1504,9 @@ function FormRendererContent({
     ]
   );
 
-  const snapshotRepeatable = useMemo(() => cloneDeep(repeatableState), [repeatableState]);
+  // Accepted collection updates replace this owned tree. Public snapshots are cloned below;
+  // avoid another complete copy during the render that installs a prepared selection.
+  const snapshotRepeatable = repeatableState;
   const submissionSnapshot = useMemo(() => {
     const timestampSnapshot = buildSubmissionTimestampSnapshot(timestamps);
 

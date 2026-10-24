@@ -1,4 +1,4 @@
-import { createStructuredRecord, flattenFields } from 'form0-core';
+import { createStructuredRecord, createStructuredRecordAsync, flattenFields } from 'form0-core';
 import { cloneDeep } from './repeatable-manager.js';
 
 export const DEFAULT_FIELD_KEY_MODE = 'prefer-key';
@@ -25,12 +25,16 @@ const getTimestampSourceValue = (source, key) => {
   return undefined;
 };
 
-export function buildSubmissionTimestampSnapshot(sourceValues = {}, updatedAtClientOverride = null) {
+export function buildSubmissionTimestampSnapshot(
+  sourceValues = {},
+  updatedAtClientOverride = null
+) {
   const source = sourceValues && typeof sourceValues === 'object' ? sourceValues : {};
   const now = updatedAtClientOverride ?? new Date().toISOString();
 
   return {
-    created_at_client: toNullableString(getTimestampSourceValue(source, 'created_at_client')) ?? now,
+    created_at_client:
+      toNullableString(getTimestampSourceValue(source, 'created_at_client')) ?? now,
     updated_at_client:
       updatedAtClientOverride ??
       toNullableString(getTimestampSourceValue(source, 'updated_at_client')) ??
@@ -66,7 +70,7 @@ export function buildSubmissionRawValues({
   };
 }
 
-export function buildStructuredSubmission({
+function* structuredSubmissionSteps({
   schema,
   values,
   repeatable,
@@ -76,7 +80,7 @@ export function buildStructuredSubmission({
   const statusField = schema?.form?.status_field || null;
   const statusFieldName = statusField?.data_name || null;
   const statusValue = statusFieldName
-    ? values?.[statusFieldName] ?? statusField?.default_value ?? null
+    ? (values?.[statusFieldName] ?? statusField?.default_value ?? null)
     : null;
   const timestamps = explicitTimestamps
     ? buildSubmissionTimestampSnapshot(explicitTimestamps)
@@ -95,7 +99,7 @@ export function buildStructuredSubmission({
 
   let structuredRecord = rawValues;
   try {
-    structuredRecord = createStructuredRecord(
+    structuredRecord = yield [
       {
         values: rawValues,
         repeatable: repeatableState,
@@ -106,13 +110,13 @@ export function buildStructuredSubmission({
         originalElements: schema?.form?.elements || [],
         title_field: schema?.form?.title_field || null,
         status_field: statusField,
-        '@status': statusFieldName ? statusValue ?? null : undefined,
+        '@status': statusFieldName ? (statusValue ?? null) : undefined,
       },
-    );
+    ];
   } catch (error) {
     console.error(
       'form0-react-native: failed to build structured record, falling back to raw values',
-      error,
+      error
     );
     structuredRecord = rawValues;
   }
@@ -123,4 +127,29 @@ export function buildStructuredSubmission({
     repeatable: repeatableState,
     timestamps,
   };
+}
+
+export function buildStructuredSubmission(input) {
+  const work = structuredSubmissionSteps(input);
+  const args = work.next().value;
+  try {
+    return work.next(createStructuredRecord(...args)).value;
+  } catch (error) {
+    return work.throw(error).value;
+  }
+}
+
+export async function buildStructuredSubmissionAsync(input, scheduling) {
+  const work = structuredSubmissionSteps(input);
+  const args = work.next().value;
+  try {
+    return work.next(await createStructuredRecordAsync(...args, scheduling)).value;
+  } catch (error) {
+    if (
+      error?.name === 'AbortError' ||
+      ['cancelled', 'record_scheduling_failed'].includes(error?.code)
+    )
+      throw error;
+    return work.throw(error).value;
+  }
 }

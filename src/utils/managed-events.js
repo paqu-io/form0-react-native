@@ -4,7 +4,10 @@ export function copyEventData(value, seen = new Set()) {
     return value;
   if (value instanceof Date) return new Date(value.getTime());
   if (typeof File === 'function' && value instanceof File)
-    return new File([value], value.name, { type: value.type, lastModified: value.lastModified });
+    return new File([value], value.name, {
+      type: value.type,
+      lastModified: value.lastModified,
+    });
   if (typeof Blob === 'function' && value instanceof Blob)
     return Blob.prototype.slice.call(value, 0, value.size, value.type);
   if (typeof value !== 'object' || seen.has(value))
@@ -40,6 +43,15 @@ export function eventDataSignature(value) {
       return { mediaKind: 'Blob', size: entry.size, type: entry.type };
     return entry;
   });
+}
+
+const collectionSignatures = new WeakMap();
+
+/** Private renderer contract: accepted collection trees are replaced on every row mutation. */
+export function ownedCollectionSignature(tree) {
+  if (!tree || typeof tree !== 'object') return eventDataSignature(tree) ?? '';
+  if (!collectionSignatures.has(tree)) collectionSignatures.set(tree, eventDataSignature(tree));
+  return collectionSignatures.get(tree);
 }
 
 export function normalizeEventOptions(events = {}) {
@@ -305,7 +317,12 @@ export function createEventSession(configuration = {}) {
             isValid: !intrinsic.hasErrors,
           }
         )
-      : { status: 'completed', operations: [], validationIssues: [], issues: [] };
+      : {
+          status: 'completed',
+          operations: [],
+          validationIssues: [],
+          issues: [],
+        };
     return {
       detail,
       summary: mergeCustomValidation(intrinsic, detail.validationIssues),
@@ -330,8 +347,8 @@ export function createEventSession(configuration = {}) {
                 isDraft: draft,
                 isValid: !summary.hasErrors,
               }),
-            serialize: (snapshot, selectedIntent, summary) =>
-              scope.adapter.serialize(snapshot, selectedIntent, summary),
+            serialize: (snapshot, selectedIntent, summary, scheduling) =>
+              scope.adapter.serialize(snapshot, selectedIntent, summary, scheduling),
           }
         );
         if (!current(scope)) return failure('scope_closed', 'The target editor has ended.', scope);
@@ -357,9 +374,19 @@ export function createEventSession(configuration = {}) {
               isValid: !scope.adapter.validate(validation.state).hasErrors,
             }
           )
-        : { status: 'completed', operations: [], validationIssues: [], issues: [] };
+        : {
+            status: 'completed',
+            operations: [],
+            validationIssues: [],
+            issues: [],
+          };
       if (save.issues.length)
-        return { ...save, eligible: false, payload: null, validationSummary: validation.summary };
+        return {
+          ...save,
+          eligible: false,
+          payload: null,
+          validationSummary: validation.summary,
+        };
       if (signature !== scope.adapter.dataSignature()) validation = await validate(scope, draft);
       if (validation.detail.issues.length || (!draft && validation.summary.hasErrors))
         return {
