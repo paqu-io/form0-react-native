@@ -37,6 +37,66 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       ],
     },
   });
+  testCase(
+    'Native schema replacement refreshes calculations, collections and event registrations',
+    async () => {
+      const form = schema();
+      form.form.elements.splice(
+        1,
+        0,
+        field('TextField', 'event_marker'),
+        field('CalculatedField', 'tax_percent', { calculate: '$tax * 100' })
+      );
+      form.form.events = {
+        code: "ON('change', 'tax', function() { SETVALUE('event_marker', ($event_marker || '') + 'A'); });",
+      };
+      const seed = initial(),
+        snapshots = vi.fn();
+      const engineOptions = {
+        security,
+        diagnostics: { console: false },
+        events: { lifecycle: true, recordKind: 'existing' },
+      };
+      const props = {
+        initialSnapshot: seed,
+        onSnapshotChange: snapshots,
+        engineOptions,
+      };
+      const mounted = render(<FormRenderer {...props} schema={form} />);
+      await screen.findByText('20');
+      fireEvent.change(screen.getByDisplayValue('0.2'), {
+        target: { value: '0.3' },
+      });
+      await screen.findByText('30');
+      await waitFor(() => expect(snapshots.mock.calls.at(-1)[0].raw_values.event_marker).toBe('A'));
+
+      const updated = structuredClone(form);
+      updated.form.elements.find((entry) => entry.data_name === 'tax_percent').calculate =
+        '$tax * 1000';
+      updated.form.elements.find((entry) => entry.data_name === 'grand').calculate =
+        "REPEATABLESUM($lines, 'amount')";
+      updated.form.elements.push(
+        field('CalculatedField', 'added', { calculate: '$tax_percent + 1' })
+      );
+      updated.form.events.code = form.form.events.code.replace("+ 'A'", "+ 'B'");
+      mounted.rerender(<FormRenderer {...props} schema={updated} />);
+      await screen.findByText('added');
+      await waitFor(() => expect(snapshots.mock.calls.at(-1)[0].raw_values.grand).toBe(300));
+      const before = snapshots.mock.calls.at(-1)[0].raw_values.event_marker || '';
+      fireEvent.change(screen.getByDisplayValue('0.2'), {
+        target: { value: '0.4' },
+      });
+      await screen.findByText('400');
+      await screen.findByText('401');
+      await waitFor(() =>
+        expect(snapshots.mock.calls.at(-1)[0].raw_values.event_marker).toBe(`${before}B`)
+      );
+      expect(form.form.elements.find((entry) => entry.data_name === 'tax_percent').calculate).toBe(
+        '$tax * 100'
+      );
+    }
+  );
+
   testCase('Native cached calculations follow repeated and rapid live input edits', async () => {
     const form = schema();
     form.form.elements.splice(
