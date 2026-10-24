@@ -187,7 +187,9 @@ RN 0.88.0, Hermes and development mode. In the warm managed run, 19.7 of 28.1 se
 yield waiting; 8.4 seconds is outside yields. Core now reuses argument-layout preparation and
 Native uses the host idle-task queue while retaining the 8 ms budget and cancellation. Updated
 desktop measurements and full automated verification are in the investigation document above.
-The actual Pixel improvement is not yet verified.
+The subsequent Pixel profile verifies the 200-row core improvement: warm managed preparation is
+1,010.3 ms (previously 28,102.4), with 64.8 ms yield waiting and 945.6 ms outside yields.
+Full-renderer large-form responsiveness remains to be checked.
 
 Review actions now use the header's themed buttons; child Edit uses the same Pencil icon as root.
 The installed candidate is recorded in `logs/android-profile-candidate.json` in the active harness.
@@ -215,3 +217,17 @@ or full-controller performance acceptance. Cancel preparation also cancels this 
 The updated diagnostic uses the renderer's actual scheduler for all four preparations; its separate
 twenty-timer calibration still measures the legacy fallback. Current archives and hashes are in
 `logs/android-performance-candidates.json`; prior candidates and results are preserved.
+
+## Current next step — full renderer
+
+The profile above has passed on the physical Pixel with the expected revision/scheduler. Keep its
+result as evidence; it does not need another diagnostic rerun. The same installed runtime archives
+are current. Additional live-edit regression tests changed no runtime bytes: repeated/rapid root
+and row edits update calculations, View preserves accepted values, and child Save updates the root
+aggregate. React main-thread/actual-worker and Native adapter checks pass in TRUSTED and SAFE.
+
+Resume walkthrough 3's **Programmatic prepare** checks for Large 200 and Large 2,000, recording
+`elapsedMs`, `maxObservedJsGapMs`, eligibility and issues. Repeat its cancellation check during a
+fresh large preparation. These exercise editor settling, selection, signatures and serialization
+as well as core work. Core `maxWorkSliceMs` is not the full renderer's observed JS gap. Walkthroughs
+1 and 2 retain their accepted behavior; no additional manual live-edit walkthrough is requested.
