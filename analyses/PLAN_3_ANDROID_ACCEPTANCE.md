@@ -2,13 +2,18 @@
 
 Accepted-snapshot viewing, load permissions and event.mode are implemented; automated evidence
 and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
-The maintainer reports walkthroughs 1 and 2 passing on Pixel 8a / Android 17, and the remaining
-walkthrough 3 functional checks passing. Preparation performance remains unresolved: 9,714 ms for
-200 rows and 97,889 ms for 2,000 rows, with maximum observed JS gaps of 148 / 970 ms. No DevTools
-were open. See `form0-core/analyses/ANDROID_PREPARATION_INVESTIGATION.md` for the matched benchmark
-comparison and next diagnostic. Reuse the installed SDK 58 harness with the new candidates. Adapter, Node and Chromium results do not establish Hermes
-performance or device acceptance. iOS remains deferred. Use the packed core/Native candidates named
-in the Plan 3 verification ledger; their labels retain the last published versions until release.
+The maintainer reports walkthroughs 1 and 2 and prompt large-form cancellation passing on Pixel
+8a / Android API 37, Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The most recent physical
+`native-responsive-serialization` run takes 1,682 / 12,457 ms for 200 / 2,000 rows, with observed JS
+gaps 152 / 325 ms. Both complete eligible with no issues. The large gap improved from 949 ms;
+performance sign-off remains open. See the latest section below for the **single remaining timing
+check** with the newer `native-owned-tree-signatures` candidate. Older sections retain historical
+diagnostic instructions and candidate provenance; do not rerun them to resume acceptance.
+
+The independent SDK 58 harness now contains the new candidate with installed source-byte parity.
+No SDK/dependency installation is needed. Adapter, Node and Chromium results do not establish Hermes
+performance; iOS remains deferred. See `form0-core/analyses/ANDROID_PREPARATION_INVESTIGATION.md`
+for measurements and limits. Archive labels retain last published versions until maintainer release.
 
 ## Prepare and start
 
@@ -245,3 +250,36 @@ added calculations, a changed collection target and new event code replace prior
 handlers. The complete Native adapter suite passes 33 cases. Actual browser main-thread/worker and
 CLI file-watcher checks are recorded in the core investigation. These are tests only; current
 device archives and installed runtime source remain unchanged.
+
+
+## Current focused timing check — owned-tree signatures, 24 October
+
+The prior `native-responsive-serialization` phone result is recorded above. Cancellation was
+separately confirmed as prompt/cancelled, preserving that acceptance and walkthroughs 1/2.
+A measured repeated full-tree signature cost has since been removed from renderer bookkeeping:
+accepted collection trees are immutable/replaced on edits, while mutable input values, metadata
+and host policy are still checked afresh. No calculation results are cached. Generic adapters still
+detect in-place child mutations. Selected-state application avoids a redundant root calculation.
+
+Full automated checks pass: 35 Native adapter cases, 69 Node tests, React 100 tests, actual browser
+main/worker submission/view/live edits/schema reload, CLI persistence/reload, Builder integration,
+core release checks and localized docs gates. CPU-throttled production Native-adapter warmed gaps
+are 107–144 ms, with individual synchronous tasks <=72 ms; this is not a Hermes result.
+
+The new independent device candidate is in `responsiveness-owned-tree/`; exact SHA-256, sizes,
+SDK versions and installed parity are in `logs/responsiveness-owned-tree-device-candidates.json`.
+Previous physical-test archives in `responsiveness/` are preserved. No dependency reinstall or
+SDK change occurred. Keep both candidate manifests with the physical reports.
+
+1. Restart the existing Metro process using the usual clear-cache start command, then reload Expo Go.
+2. Keep SAFE off and DevTools closed, matching the previous runs.
+3. Tap **Large 2,000** to start a fresh fixture.
+4. Tap **Programmatic prepare** once and wait for the result.
+5. Confirm `revision: "native-owned-tree-signatures"`, then share the displayed JSON and whether
+   the remaining pause is noticeable. If the revision is old, refresh the existing Metro app rather
+   than reinstalling dependencies.
+
+Do not repeat walkthroughs 1/2, the Profile preparation diagnostic or cancellation solely for this
+check. Earlier prompt cancellation remains accepted. No cold/warm classification is assumed for
+this single physical sample. Performance and Plan 3 sign-off remain open pending this result;
+iOS acceptance, production Reform adoption and dependency-exception remediation stay separate.
