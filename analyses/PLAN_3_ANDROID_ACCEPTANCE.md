@@ -218,7 +218,7 @@ The updated diagnostic uses the renderer's actual scheduler for all four prepara
 twenty-timer calibration still measures the legacy fallback. Current archives and hashes are in
 `logs/android-performance-candidates.json`; prior candidates and results are preserved.
 
-## Current next step — full renderer
+## Full-renderer retest received — 24 October
 
 The profile above has passed on the physical Pixel with the expected revision/scheduler. Keep its
 result as evidence; it does not need another diagnostic rerun. The same installed runtime archives
@@ -226,8 +226,22 @@ are current. Additional live-edit regression tests changed no runtime bytes: rep
 and row edits update calculations, View preserves accepted values, and child Save updates the root
 aggregate. React main-thread/actual-worker and Native adapter checks pass in TRUSTED and SAFE.
 
-Resume walkthrough 3's **Programmatic prepare** checks for Large 200 and Large 2,000, recording
-`elapsedMs`, `maxObservedJsGapMs`, eligibility and issues. Repeat its cancellation check during a
-fresh large preparation. These exercise editor settling, selection, signatures and serialization
-as well as core work. Core `maxWorkSliceMs` is not the full renderer's observed JS gap. Walkthroughs
-1 and 2 retain their accepted behavior; no additional manual live-edit walkthrough is requested.
+The maintainer reports **Programmatic prepare** completing with eligibility and no issues:
+
+| Total rows | Elapsed (ms) | Maximum observed JS gap (ms) |
+| --- | --- | --- |
+| 200 | 1,516 | 182 |
+| 2,000 | 11,213 | 949 |
+
+Cancellation passes. These checks exercise editor settling, selection, signatures and serialization
+as well as core work. No warm-up classification was supplied. Keep walkthroughs 1 and 2 and all
+functional checks accepted; performance remains open because the large case still stalls JS for
+nearly a second. Next profile the full controller's phases before requesting another device run.
+Core `maxWorkSliceMs` is not the full renderer's observed JS gap. No additional manual live-edit,
+schema-reload or general acceptance rerun is requested now.
+
+Schema replacement is additionally verified automatically under TRUSTED/SAFE: edited and newly
+added calculations, a changed collection target and new event code replace prior preparation and
+handlers. The complete Native adapter suite passes 33 cases. Actual browser main-thread/worker and
+CLI file-watcher checks are recorded in the core investigation. These are tests only; current
+device archives and installed runtime source remain unchanged.
