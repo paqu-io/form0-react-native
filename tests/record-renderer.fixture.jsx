@@ -37,6 +37,59 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       ],
     },
   });
+  testCase('Native cached calculations follow repeated and rapid live input edits', async () => {
+    const form = schema();
+    form.form.elements.splice(
+      2,
+      0,
+      field('CalculatedField', 'tax_percent', { calculate: '$tax * 100' })
+    );
+    const seed = initial(),
+      original = structuredClone(seed),
+      snapshots = vi.fn();
+    render(
+      <FormRenderer
+        schema={form}
+        initialSnapshot={seed}
+        onSnapshotChange={snapshots}
+        engineOptions={{ security, diagnostics: { console: false } }}
+      />
+    );
+    await screen.findByText('20');
+    const tax = screen.getByDisplayValue('0.2');
+    fireEvent.change(tax, { target: { value: '0.3' } });
+    await screen.findByText('30');
+    fireEvent.change(tax, { target: { value: '0.4' } });
+    await screen.findByText('40');
+    fireEvent.change(tax, { target: { value: '0.5' } });
+    fireEvent.change(tax, { target: { value: '0.6' } });
+    await screen.findByText('60');
+    expect(snapshots.mock.calls.at(-1)[0].raw_values.grand).toBe(330);
+    fireEvent.click(screen.getByText('lines'));
+    fireEvent.click(screen.getByRole('button', { name: 'View', exact: true }));
+    await screen.findByText('lines 1');
+    fireEvent.click(screen.getAllByText('View')[0]);
+    await screen.findByText('110');
+    fireEvent.click(screen.getByText('Edit'));
+    await screen.findByText('160');
+    const amount = screen.getByDisplayValue('100');
+    fireEvent.change(amount, { target: { value: '150' } });
+    await screen.findByText('240');
+    fireEvent.change(amount, { target: { value: '200' } });
+    fireEvent.change(amount, { target: { value: '300' } });
+    await screen.findByText('480');
+    expect(snapshots.mock.calls.at(-1)[0].repeatable.lines.map((row) => row.values.total)).toEqual([
+      110, 220,
+    ]);
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(snapshots.mock.calls.at(-1)[0].raw_values.grand).toBe(700);
+      expect(
+        snapshots.mock.calls.at(-1)[0].repeatable.lines.map((row) => row.values.total)
+      ).toEqual([480, 220]);
+    });
+    expect(seed).toEqual(original);
+  });
   testCase(
     'Native returning to View after persistence failure retains selected unsaved values',
     async () => {
