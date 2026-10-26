@@ -2,6 +2,7 @@ import { cp, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DIAGNOSTIC_BUILD } from '../tests/device/diagnostic-bootstrap.js';
 
 // Only an ignored device diagnostic copy is instrumented. Shipped core remains untouched.
 export function instrumentRecordEvaluator(source) {
@@ -103,6 +104,7 @@ export function createPhaseDiagnosticEntry(sourceHash) {
   return `// Device harness only. Bundle the module; initialize it only when Profile is pressed.
 globalThis.__form0DevicePhaseDiagnostic = {
   sourceHash: ${JSON.stringify(sourceHash)},
+  bootstrapRevision: ${JSON.stringify(DIAGNOSTIC_BUILD)},
   loading: 'bundled-require',
   load: () => require('./diagnostic-core-20261026/src/engine/record-evaluator.js'),
 };

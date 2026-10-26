@@ -93,6 +93,7 @@ for (const file of [
   "App.jsx",
   "record-fixtures.js",
   "preparation-profile.js",
+  "diagnostic-bootstrap.js",
   "metro.config.cjs",
   "metro-proxy-headers.cjs",
 ])

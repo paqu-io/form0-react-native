@@ -5,6 +5,7 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { deviceFixture } from './record-fixtures.js';
 import { profilePreparation } from './preparation-profile.js';
+import { DIAGNOSTIC_BUILD, checkDiagnosticBootstrap } from './diagnostic-bootstrap.js';
 import { storeStructuredRecord, getRecentStoredRecords } from './local-record-store.js';
 const storage = {
   databaseName: 'form0-plan3-acceptance.db',
@@ -140,10 +141,15 @@ export default function App() {
     abort.current = cancellation;
     setBusy(true);
     setStatus('Profiling the 200-row fixture; this does not edit or save the displayed record.');
+    let stage = 'checking-bootstrap';
+    let diagnostic = null;
     try {
       const input = deviceFixture('large200');
-      const diagnostic = globalThis.__form0DevicePhaseDiagnostic;
-      const instrumented = diagnostic ? await diagnostic.load() : null;
+      diagnostic = globalThis.__form0DevicePhaseDiagnostic;
+      checkDiagnosticBootstrap(diagnostic);
+      stage = 'loading-bundled-evaluator';
+      const instrumented = await diagnostic.load();
+      stage = 'evaluating-profile';
       const result = await profilePreparation({
         schema: input.schema,
         snapshot: {
@@ -157,7 +163,7 @@ export default function App() {
       });
       const report = {
         type: 'preparation-profile',
-        revision: 'native-production-phases-bundled',
+        revision: DIAGNOSTIC_BUILD,
         rows: 200,
         dev: typeof __DEV__ !== 'undefined' && __DEV__,
         hermes: Boolean(globalThis.HermesInternal),
@@ -166,12 +172,29 @@ export default function App() {
         safe,
         diagnosticSourceHash: diagnostic?.sourceHash ?? null,
         diagnosticLoading: diagnostic?.loading ?? null,
+        bootstrapRevision: diagnostic?.bootstrapRevision ?? null,
         ...result,
       };
       console.info('[form0 acceptance] Preparation profile', JSON.stringify(report));
       setStatus(JSON.stringify(report));
     } catch (error) {
-      setStatus(error.message);
+      setStatus(
+        JSON.stringify({
+          type: 'preparation-profile-error',
+          revision: DIAGNOSTIC_BUILD,
+          stage,
+          dev: typeof __DEV__ !== 'undefined' && __DEV__,
+          hermes: Boolean(globalThis.HermesInternal),
+          diagnosticLoading: diagnostic?.loading ?? null,
+          bootstrapRevision: diagnostic?.bootstrapRevision ?? null,
+          code: error.code ?? null,
+          message: error.message,
+          frames: (error.stack || '')
+            .split('\n')
+            .slice(1, 7)
+            .map((line) => line.replace(/https?:\/\/\S+/g, '<bundle>')),
+        })
+      );
     } finally {
       setBusy(false);
       abort.current = null;
@@ -215,6 +238,10 @@ export default function App() {
           </Text>
           <Text>Record device model and Expo client version in the acceptance report.</Text>
           <Text>JS development mode: {String(typeof __DEV__ !== 'undefined' && __DEV__)}</Text>
+          <Text>
+            Harness build: {DIAGNOSTIC_BUILD} · Bootstrap:{' '}
+            {globalThis.__form0DevicePhaseDiagnostic?.bootstrapRevision ?? 'old/missing'}
+          </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
             {button('Nested editing', () => choose('nested'))}
             {button('Confirmation / persistence', () => choose('confirm'))}
@@ -236,7 +263,7 @@ export default function App() {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
             {button('Reopen saved', reopen)}
             {button('Programmatic prepare', prepare)}
-            {button('Profile preparation (200)', profile)}
+            {button('Profile phases v3 (200)', profile)}
             {button('Cancel preparation', () => abort.current?.abort())}
             {button('Persist prepared', persistPrepared)}
           </View>

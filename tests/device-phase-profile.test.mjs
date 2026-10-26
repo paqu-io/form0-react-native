@@ -8,6 +8,7 @@ import {
   createPhaseDiagnosticEntry,
 } from '../scripts/prepare-device-phase-profile.mjs';
 import { profilePreparation } from './device/preparation-profile.js';
+import { DIAGNOSTIC_BUILD, checkDiagnosticBootstrap } from './device/diagnostic-bootstrap.js';
 import { field, repeatable } from './fixtures/diagnostic-conformance.js';
 
 const sourceURL = new URL('./engine/record-evaluator.js', import.meta.resolve('form0-core'));
@@ -73,6 +74,30 @@ test('native production diagnostic stays bundled and initializes only when reque
   assert.equal(requires, 1);
   assert.equal(loaded.createRecordEvaluator, phaseFactory);
   assert.equal(context.__form0DevicePhaseDiagnostic.loading, 'bundled-require');
+  assert.equal(context.__form0DevicePhaseDiagnostic.bootstrapRevision, DIAGNOSTIC_BUILD);
+  checkDiagnosticBootstrap(context.__form0DevicePhaseDiagnostic);
+});
+
+test('stale diagnostic entrypoints are rejected before invoking their loader', () => {
+  let loads = 0;
+  for (const diagnostic of [
+    undefined,
+    {
+      load() {
+        loads++;
+      },
+    },
+    {
+      loading: 'bundled-require',
+      load() {
+        loads++;
+      },
+    },
+  ])
+    assert.throws(() => checkDiagnosticBootstrap(diagnostic), {
+      code: 'stale_diagnostic_bootstrap',
+    });
+  assert.equal(loads, 0);
 });
 
 for (const security of [undefined, { mode: 'safe' }])
