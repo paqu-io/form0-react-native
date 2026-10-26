@@ -469,3 +469,41 @@ That is the only remaining requested measurement at this checkpoint. Phase inter
 further runtime optimization remain pending; current calculations/events/form logic are unchanged.
 Evidence: active-harness `phase-loader-production.mjs`, `logs/phase-loader-before-lazy.json`,
 `phase-loader-after-bundled-restarted.json` and `phase-loader-native-tests-final.log`.
+
+## Profiler retry build marker — phase-profile-v3
+
+The maintainer still reports the same URL message after restarting Metro and closing/reopening
+Expo Go. Do not infer handset recovery from the compiled-graph checks. The running maintainer Metro
+on port 8081 serves the corrected bundled loader and updated App code. Its actual main index graph
+also passes the no-location, zero-network-load regression and TRUSTED/SAFE 200-row result parity.
+The previously displayed fixture had no visible bootstrap version, so the handset's loaded build
+remains unknown. Stale client code is a hypothesis, not a confirmed diagnosis.
+
+The fixture now visibly displays **Harness build: phase-profile-v3 · Bootstrap: phase-profile-v3**
+and a **Profile phases v3 (200)** button. A shared build token rejects stale/missing bootstraps before
+calling their loader. If a current-build attempt fails, it returns JSON with revision, stage,
+bootstrap/loading metadata and URL-redacted stack frames. This separates checking-bootstrap,
+loading-bundled-evaluator and evaluating-profile failures. No runtime calculation/event changes.
+
+1. Force stop Expo Go using Android **Settings → Apps → Expo Go → Force stop**.
+2. Reopen Expo Go and scan the QR currently displayed by Metro, rather than opening a recent project.
+   The running server already serves v3; another Metro restart is not required for this checkpoint.
+3. Check both visible build markers equal **phase-profile-v3**. If either differs, stop and report
+   the header; do not rerun timings.
+4. With dev:false, SAFE off and the default Nested editing fixture selected, tap **Profile phases
+   v3 (200)** once and copy the on-screen JSON, including any error stage.
+
+The Large 200 and Large 2,000 controller results remain accepted observations. No rerun is requested.
+Independent tests: 84 Node tests pass, including early rejection of stale loaders. Live main-graph
+evidence: `logs/phase-loader-maintainer-index-graph.json` and
+`phase-loader-maintainer-index-graph-v3.json` (both not Hermes). Source markers were verified in the
+running server's bundle. Physical v3 markers and phase results remain pending.
+
+The maintainer subsequently reports that the header is not visible. A read-only check of both the
+local launch-asset response and its advertised public tunnel returns HTTP 200 with the v3 header,
+button and stale-bootstrap guard. Neither response contains the old dynamic-import descriptor.
+This narrows server delivery, but does not identify the handset's loaded code or establish a cache
+cause. Evidence: `logs/phase-loader-local-tunnel-parity.json`; only origin hashes and marker booleans
+are retained, without tunnel URLs. The next observation is the actual profiler button label near
+Programmatic prepare: **Profile preparation (200)**, **Profile phases v3 (200)**, or neither. Do not
+request another timing run or clear application data before establishing that observation.
