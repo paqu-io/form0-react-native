@@ -1,6 +1,7 @@
 import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
+import { normalizeChoiceOperationValue } from './utils/choice-operation-values.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildRepeatableInfo,
@@ -292,7 +293,9 @@ export function useRepeatableInstanceEngine({
             );
             return;
           }
-          pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
+          pendingValueUpdates[fieldDataName] = cloneDeep(
+            normalizeChoiceOperationValue(repInfo?.fields?.get(fieldDataName)?.field, valueToSet)
+          );
           return;
         }
 
@@ -308,7 +311,7 @@ export function useRepeatableInstanceEngine({
         setValues(pendingValueUpdates);
       }
     },
-    [setValues]
+    [setValues, repInfo]
   );
 
   const processOperations = useCallback(

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateSchema } from 'form0-core';
 import { buildRepeatableInfo } from './utils/repeatable-manager.js';
 import { ensureKeys } from './utils/ensure-keys';
+import { normalizeChoiceOperationValue } from './utils/choice-operation-values.js';
 
 const createEmptyState = () => ({
   values: {},
@@ -103,12 +104,14 @@ export function useFormEngine(
 
   const diagnosticGeneration = useMemo(() => ({}), [preparedSchema, initialValuesSignature]);
 
+  const fieldOwnership = useMemo(
+    () => buildRepeatableInfo(preparedSchema?.form?.elements || []).fieldOwnership,
+    [preparedSchema]
+  );
   const diagnosticFieldNames = useMemo(
     () =>
-      [...buildRepeatableInfo(preparedSchema?.form?.elements || []).fieldOwnership]
-        .filter(([, info]) => info.parentPath.length === 0)
-        .map(([name]) => name),
-    [preparedSchema]
+      [...fieldOwnership].filter(([, info]) => info.parentPath.length === 0).map(([name]) => name),
+    [fieldOwnership]
   );
   const {
     createEngine: createObservedEngine,
@@ -194,7 +197,9 @@ export function useFormEngine(
             );
             return;
           }
-          pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
+          pendingValueUpdates[fieldDataName] = cloneDeep(
+            normalizeChoiceOperationValue(fieldOwnership.get(fieldDataName)?.field, valueToSet)
+          );
           return;
         }
 
@@ -210,7 +215,7 @@ export function useFormEngine(
         setValues(pendingValueUpdates);
       }
     },
-    [setValues]
+    [setValues, fieldOwnership]
   );
 
   const processOperations = useCallback(
