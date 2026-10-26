@@ -7,8 +7,8 @@ Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The latest physical 2,000
 9,897 ms in production mode, observed JS gap 336 ms, completed/eligible/no issues (26 October).
 The preceding development sample was 9,933 ms/gap 293 ms; these are individual observations, not
 controlled repeated measurements. The 200-row production sample was 1,373 ms/gap 96 ms.
-Full automated checks pass. Installed revision:
-**`native-production-baseline`** for the new investigation (package runtime bytes are unchanged).
+Full automated checks pass. Next installed controller revision:
+**`native-literal-registration`**; physical performance acceptance remains pending.
 Use the latest section below; earlier instructions and candidate
 sections are historical and should not be repeated to resume acceptance.
 
@@ -582,3 +582,60 @@ maintainer's Metro on 8081 was left running.
 No reinstall, data clearing, SDK upgrade or 200/2,000-row controller rerun is requested. Retain all
 prior functional/cancellation acceptance and corrected controller measurements. Actual phase timings,
 the physical cache-workaround result and Plan 3 performance acceptance remain pending.
+
+## Physical profiler recovery and phase report — 26 October
+
+The maintainer confirms the session-key launcher works and the current **Profile phases v3 (200)**
+report runs successfully. It confirms dev:false, Hermes, SAFE off, idle-callback, bundled-require,
+the current source SHA and both v3 markers. The loader/cache retry above is accepted and must not be
+repeated. Raw report: `logs/android-pixel8a-production-phases-v3.json`; summary:
+`android-pixel8a-production-phases-v3-summary.json`.
+
+Three warm core controls have elapsed medians 520.4 ms without managed events and 844.0 ms with
+them. A separate instrumented warm probe is 828.2 ms, including 35.1 ms explicit scheduler waits.
+Of its 793.1 ms active wall time, managed validation is 367.8 ms (46.4%), including registration
+context setup 231.4 ms (29.2%) and dispatch 133.1 ms (16.8%). Calculations use 239.7 ms (30.2%),
+public result copy/freshness 67.3 ms (8.5%). Do not add nested phases twice, treat active wall time as
+CPU sampling or combine this core probe with the prior 1,373/9,897 ms full controller timings.
+
+Two allocation/layout prototypes show only small large-fixture gains and small-fixture regressions,
+so they are discarded. A literal-handler-registration prototype is being measured next. No new
+phone checks are requested until a candidate meets the benefit/behavior gates. Existing functional,
+cancellation and controller acceptance remain retained. Performance completion is still open.
+
+## Literal registration candidate — next focused Pixel check
+
+The physical phase report identified unnecessary schema-wide default bindings during literal
+handler registration. The candidate avoids that setup only for complete scripts of canonical
+`ON('event', function (...) { ... })` calls. Every handler still runs with fresh current permitted
+values and the existing execution/security policy. Conditional/dynamic initialization or custom
+`ON` keeps the old complete path; handler bodies and future builtins need no optimizer adaptation.
+Calculation execution and live updates are unchanged.
+
+Paired Node complete results remain identical with 23.6–29.7% less large-fixture active work.
+Core release checks, React 100 / Native 86 / CLI 168 tests and actual browser/worker/CLI checks pass.
+Production desktop reference targets pass; a rebuilt Native HTML adapter also passes responsiveness
+checks. These results do not predict the Pixel's elapsed time or establish Hermes acceptance.
+Candidate provenance and exact reports are in the core investigation and
+`logs/literal-registration-device-provenance.json` in the active harness.
+
+The existing device dependency tree is reused; only the packed core and small test sources change.
+SDK/Expo/RN pins, app/database identity, saved fixtures and accepted walkthroughs 1/2 remain intact.
+The session asset-key launcher remains required for fresh production source delivery.
+
+1. Stop your Metro with Ctrl+C.
+2. From `.local-test-harnesses/form0-plan3-20261022/device`, run the same command:
+   `npm start -- --tunnel ngrok --no-dev --minify --max-workers 2`.
+3. Confirm startup reports `production-launch-asset-key` / `session-key-enabled`.
+4. Force stop Expo Go, reopen it and scan the current QR.
+5. Confirm **Preparation candidate: native-literal-registration**, development mode **false**,
+   Hermes **true**, SAFE **off** and DevTools closed. Stop on a different candidate marker.
+6. Tap **Large 200**, then **Programmatic prepare** once. Copy its complete result JSON.
+7. Tap **Large 2,000**, then **Programmatic prepare** once. Copy its complete result JSON.
+8. Tap **Large 2,000** again to reset, start **Programmatic prepare**, then tap **Cancel preparation**.
+   Report whether it responds promptly and returns cancelled.
+
+Both completed reports must identify `revision: "native-literal-registration"` and their fixture.
+Do not repeat walkthroughs 1/2 or the phase profile now. Compare these fresh controller workloads
+with the retained production 1,373/9,897 ms observations; neither is a warmed core benchmark.
+Stop additional optimization work at this candidate until these physical observations arrive.
