@@ -99,6 +99,16 @@ export function instrumentRecordEvaluator(source) {
   return '// DIAGNOSTIC ONLY: phase boundaries; never a publishable candidate.\n' + source;
 }
 
+export function createPhaseDiagnosticEntry(sourceHash) {
+  return `// Device harness only. Bundle the module; initialize it only when Profile is pressed.
+globalThis.__form0DevicePhaseDiagnostic = {
+  sourceHash: ${JSON.stringify(sourceHash)},
+  loading: 'bundled-require',
+  load: () => require('./diagnostic-core-20261026/src/engine/record-evaluator.js'),
+};
+`;
+}
+
 export async function prepareDevicePhaseProfile(target) {
   const sourceRoot = path.join(target, 'node_modules/form0-core/src');
   const relative = 'engine/record-evaluator.js';
@@ -120,15 +130,7 @@ export async function prepareDevicePhaseProfile(target) {
     path.join(output, 'DIAGNOSTIC_ONLY.txt'),
     'Phase-instrumented source copy. Not a package candidate. Source SHA256: ' + sourceHash + '\n'
   );
-  await writeFile(
-    path.join(target, 'phase-diagnostic.js'),
-    `// Device harness only; loaded on demand after baseline controller measurements.
-globalThis.__form0DevicePhaseDiagnostic = {
-  sourceHash: ${JSON.stringify(sourceHash)},
-  load: () => import('./diagnostic-core-20261026/src/engine/record-evaluator.js'),
-};
-`
-  );
+  await writeFile(path.join(target, 'phase-diagnostic.js'), createPhaseDiagnosticEntry(sourceHash));
   const entryPath = path.join(target, 'index.js');
   const entry = await readFile(entryPath, 'utf8');
   if (!entry.includes("import './phase-diagnostic.js';"))

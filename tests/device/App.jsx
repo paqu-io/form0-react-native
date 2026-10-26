@@ -157,7 +157,7 @@ export default function App() {
       });
       const report = {
         type: 'preparation-profile',
-        revision: 'native-production-baseline',
+        revision: 'native-production-phases-bundled',
         rows: 200,
         dev: typeof __DEV__ !== 'undefined' && __DEV__,
         hermes: Boolean(globalThis.HermesInternal),
@@ -165,6 +165,7 @@ export default function App() {
         nativeVersion: Platform.constants?.reactNativeVersion,
         safe,
         diagnosticSourceHash: diagnostic?.sourceHash ?? null,
+        diagnosticLoading: diagnostic?.loading ?? null,
         ...result,
       };
       console.info('[form0 acceptance] Preparation profile', JSON.stringify(report));

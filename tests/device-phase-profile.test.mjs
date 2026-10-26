@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
 import { createRecordEvaluator } from 'form0-core';
-import { instrumentRecordEvaluator } from '../scripts/prepare-device-phase-profile.mjs';
+import {
+  instrumentRecordEvaluator,
+  createPhaseDiagnosticEntry,
+} from '../scripts/prepare-device-phase-profile.mjs';
 import { profilePreparation } from './device/preparation-profile.js';
 import { field, repeatable } from './fixtures/diagnostic-conformance.js';
 
@@ -50,6 +54,25 @@ const fixture = (invalid) => ({
 test('phase generation fails explicitly when candidate source anchors change', () => {
   assert.throws(() => instrumentRecordEvaluator('unrecognized source'), /anchor changed/);
   assert.throws(() => instrumentRecordEvaluator(source + source), /anchor changed/);
+});
+
+test('native production diagnostic stays bundled and initializes only when requested', async () => {
+  let requires = 0;
+  const context = vm.createContext({
+    process: { env: { NODE_ENV: 'production' } },
+    require(specifier) {
+      requires++;
+      assert.equal(specifier, './diagnostic-core-20261026/src/engine/record-evaluator.js');
+      return { createRecordEvaluator: phaseFactory };
+    },
+  });
+  vm.runInContext(createPhaseDiagnosticEntry('fixture-hash'), context);
+  assert.equal(vm.runInContext('typeof location', context), 'undefined');
+  assert.equal(requires, 0);
+  const loaded = await context.__form0DevicePhaseDiagnostic.load();
+  assert.equal(requires, 1);
+  assert.equal(loaded.createRecordEvaluator, phaseFactory);
+  assert.equal(context.__form0DevicePhaseDiagnostic.loading, 'bundled-require');
 });
 
 for (const security of [undefined, { mode: 'safe' }])
