@@ -4,11 +4,12 @@ Accepted-snapshot viewing, load permissions and event.mode are implemented; auto
 and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
 Walkthroughs 1/2 and prompt large-form cancellation pass on the Pixel 8a / Android API 37,
 Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The latest physical 2,000-row result is
-9,897 ms in production mode, observed JS gap 336 ms, completed/eligible/no issues (26 October).
+8,454 ms in production mode, observed JS gap 323 ms, completed/eligible/no issues (26 October).
 The preceding development sample was 9,933 ms/gap 293 ms; these are individual observations, not
-controlled repeated measurements. The 200-row production sample was 1,373 ms/gap 96 ms.
-Full automated checks pass. Next installed controller revision:
-**`native-literal-registration`**; physical performance acceptance remains pending.
+controlled repeated measurements. The latest 200-row production sample is 1,333 ms/gap 90 ms;
+the preceding production controls were 1,373/9,897 ms with gaps 96/336 ms.
+Full automated checks pass. Measured controller revision:
+**`native-literal-registration`**; final performance acceptance remains pending review of residual latency.
 Use the latest section below; earlier instructions and candidate
 sections are historical and should not be repeated to resume acceptance.
 
@@ -639,3 +640,29 @@ Both completed reports must identify `revision: "native-literal-registration"` a
 Do not repeat walkthroughs 1/2 or the phase profile now. Compare these fresh controller workloads
 with the retained production 1,373/9,897 ms observations; neither is a warmed core benchmark.
 Stop additional optimization work at this candidate until these physical observations arrive.
+
+## Physical candidate result received — 26 October
+
+The maintainer confirms these exact controller results with dev:false, Hermes:true and SAFE:false:
+
+| Fixture | Elapsed ms | Maximum observed JS gap ms | Result |
+| --- | ---: | ---: | --- |
+| Large 200 | 1,333 | 90 | completed, eligible, no issues |
+| Large 2,000 | 8,454 | 323 | completed, eligible, no issues |
+
+Cancellation during a fresh large preparation is prompt and returns cancelled. Walkthroughs 1/2
+remain accepted. The focused procedure above is completed; do not repeat it or the profiler now.
+Raw reports: `logs/android-pixel8a-literal-registration.json` and its `-summary.json` companion in
+the active harness. No runtime or harness change was made after these results.
+
+The 2,000-row elapsed observation is 1,443 ms (14.6%) below the preceding 9,897 ms production result;
+the small fixture is 40 ms (2.9%) lower. These single fresh observations support the measured bounded
+optimization but are not warmed medians or a general speedup guarantee. Large-record latency and
+the remaining 323 ms observed gap are still limitations. This full preparation includes all refreshed
+calculations, validation, selected state application and serialization; ordinary editor updates use
+scoped evaluation. Persistence is outside the measured interval.
+
+Recommendation: retain this candidate, stop adding optimizations in this pass and review final Plan 3
+acceptance with these limits documented. Desktop reference targets pass; physical two-second
+performance is not claimed. Maintainer acceptance of the residual latency remains pending. No further
+device test, SDK upgrade, release or issue closure is requested by these results. iOS stays deferred.
