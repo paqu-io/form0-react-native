@@ -399,3 +399,29 @@ Automated evidence: 77 Native Node tests; identical complete results and immutab
 equivalence; production Android bundle with `__DEV__=false` verified. The bundle is 3,584,406 bytes,
 SHA-256 `1705f0cc87cc3167742fa88642eef1c2f4b465eba7c884ec4ae5410561238ce1`.
 This is bundle verification, not physical Hermes performance. No new package archive or release.
+
+## Tunnel URL follow-up — 26 October 2026
+
+The first physical production-mode launch hit `TypeError: Invalid URL` in installed Metro
+`Server._processRequest`, before the form measurement code ran. The actual phone request headers
+were not captured. The same stack and HTTP 500 were reproduced locally by passing comma-separated
+forwarded protocols/hosts to that installed server. This is a likely explanation, not a confirmed
+capture of the phone's proxy chain. The optional Expo update notice is not evidence of its cause.
+
+The device harness now has a small Metro middleware using Expo's default configuration. Only when
+the existing origin is invalid and forwarded headers contain a valid HTTP(S) proxy chain does it
+normalize to the first forwarded host/protocol. Ordinary/direct/single-origin requests are unchanged;
+other invalid origin values are left untouched. No node_modules, SDK versions or form runtime code
+were edited. The source generator includes this harness-only configuration for reproducibility.
+
+Real HTTP checks against installed Metro show all three host/protocol chain variants return 200,
+with identical production bundle bytes to the single-origin control. `__DEV__=false` is verified.
+The independent Native Node suite now has 82 passing tests, including five request-origin cases.
+Report: active-harness `logs/production-metro-header-conformance.json`; server logs preserve the
+original failure and corrected requests. The local diagnostic server was stopped after verification.
+
+Restart the usual Metro command from the production-mode steps, then reopen Expo Go. No installation
+or command change is needed. If it still fails, share the `[form0 device Metro]` JSON line; it exposes
+only token counts/status, never URLs, query strings, header values, cookies or authorization. A
+`normalized-forwarded-chain` line confirms this guard ran. Actual tunnel recovery and physical
+performance results remain pending; do not infer recovery solely from the local synthetic tests.
