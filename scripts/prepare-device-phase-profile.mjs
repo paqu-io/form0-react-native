@@ -137,7 +137,19 @@ export async function prepareDevicePhaseProfile(target) {
   const entry = await readFile(entryPath, 'utf8');
   if (!entry.includes("import './phase-diagnostic.js';"))
     await writeFile(entryPath, "import './phase-diagnostic.js';\n" + entry);
-  return { sourceHash, instrumentedHash: createHash('sha256').update(instrumented).digest('hex') };
+  // Use a distinct launch URL so the phone cannot confuse this diagnostic with an older index bundle.
+  // Keep the Expo slug and database identity intact; this changes only the harness entry module.
+  const launchEntry = `${DIAGNOSTIC_BUILD}.js`;
+  await writeFile(path.join(target, launchEntry), "import './index.js';\n");
+  const packagePath = path.join(target, 'package.json');
+  const pkg = JSON.parse(await readFile(packagePath, 'utf8'));
+  pkg.main = launchEntry;
+  await writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+  return {
+    sourceHash,
+    instrumentedHash: createHash('sha256').update(instrumented).digest('hex'),
+    launchEntry,
+  };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
