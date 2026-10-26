@@ -113,7 +113,12 @@ export default function App() {
       if (result.eligible) prepared.current = { target, result };
       setStatus(
         JSON.stringify({
-          revision: 'native-throughput-bindings',
+          revision: 'native-production-baseline',
+          type: 'controller-preparation',
+          fixture: kind,
+          dev: typeof __DEV__ !== 'undefined' && __DEV__,
+          hermes: Boolean(globalThis.HermesInternal),
+          safe,
           status: result.status,
           eligible: result.eligible,
           elapsedMs: Math.round(clock() - start),
@@ -137,6 +142,8 @@ export default function App() {
     setStatus('Profiling the 200-row fixture; this does not edit or save the displayed record.');
     try {
       const input = deviceFixture('large200');
+      const diagnostic = globalThis.__form0DevicePhaseDiagnostic;
+      const instrumented = diagnostic ? await diagnostic.load() : null;
       const result = await profilePreparation({
         schema: input.schema,
         snapshot: {
@@ -145,16 +152,19 @@ export default function App() {
         },
         security: engineOptions.security,
         signal: cancellation.signal,
+        warmSamples: 3,
+        instrumentedFactory: instrumented?.createRecordEvaluator,
       });
       const report = {
         type: 'preparation-profile',
-        revision: 'native-idle-layout-cache',
+        revision: 'native-production-baseline',
         rows: 200,
         dev: typeof __DEV__ !== 'undefined' && __DEV__,
         hermes: Boolean(globalThis.HermesInternal),
         androidVersion: Platform.Version,
         nativeVersion: Platform.constants?.reactNativeVersion,
         safe,
+        diagnosticSourceHash: diagnostic?.sourceHash ?? null,
         ...result,
       };
       console.info('[form0 acceptance] Preparation profile', JSON.stringify(report));
@@ -203,6 +213,7 @@ export default function App() {
             {String(Boolean(globalThis.HermesInternal))}
           </Text>
           <Text>Record device model and Expo client version in the acceptance report.</Text>
+          <Text>JS development mode: {String(typeof __DEV__ !== 'undefined' && __DEV__)}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
             {button('Nested editing', () => choose('nested'))}
             {button('Confirmation / persistence', () => choose('confirm'))}

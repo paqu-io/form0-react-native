@@ -46,3 +46,30 @@ test('device profile honours cancellation before creating an evaluator', async (
   controller.abort();
   await assert.rejects(profilePreparation({ signal: controller.signal }), /cancelled/);
 });
+
+test('production comparison retains three warm samples for each managed-events setting', async () => {
+  const schema = {
+    form: { name: 'Repeated profile', elements: [field('NumericField', 'amount')] },
+  };
+  const snapshot = { values: { amount: 0 } };
+  const result = await profilePreparation({ schema, snapshot, warmSamples: 3 });
+  assert.equal(result.samples.length, 8);
+  for (const managed of [false, true])
+    assert.deepEqual(
+      result.samples
+        .filter((sample) => sample.managedEvents === managed)
+        .map(({ temperature, sample }) => [temperature, sample]),
+      [
+        ['cold', 0],
+        ['warm', 1],
+        ['warm', 2],
+        ['warm', 3],
+      ]
+    );
+  assert.equal(result.phaseProbe, null);
+  assert.deepEqual(snapshot, { values: { amount: 0 } });
+});
+
+test('profile rejects an unbounded repeat count', async () => {
+  await assert.rejects(profilePreparation({ warmSamples: 1000 }), /between 1 and 3/);
+});
