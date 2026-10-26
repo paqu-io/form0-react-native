@@ -12,6 +12,7 @@ const storage = {
   tableName: 'plan3_freshness',
 };
 const clock = () => globalThis.performance?.now?.() ?? Date.now();
+const PREPARATION_REVISION = 'native-literal-registration';
 export default function App() {
   const [fontsLoaded] = useFonts(form0Fonts);
   const [kind, setKind] = useState('nested'),
@@ -114,7 +115,7 @@ export default function App() {
       if (result.eligible) prepared.current = { target, result };
       setStatus(
         JSON.stringify({
-          revision: 'native-production-baseline',
+          revision: PREPARATION_REVISION,
           type: 'controller-preparation',
           fixture: kind,
           dev: typeof __DEV__ !== 'undefined' && __DEV__,
@@ -238,6 +239,7 @@ export default function App() {
           </Text>
           <Text>Record device model and Expo client version in the acceptance report.</Text>
           <Text>JS development mode: {String(typeof __DEV__ !== 'undefined' && __DEV__)}</Text>
+          <Text>Preparation candidate: {PREPARATION_REVISION}</Text>
           <Text>
             Harness build: {DIAGNOSTIC_BUILD} · Bootstrap:{' '}
             {globalThis.__form0DevicePhaseDiagnostic?.bootstrapRevision ?? 'old/missing'}
