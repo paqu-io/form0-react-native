@@ -7,7 +7,8 @@ Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The latest physical 2,000
 9,933 ms, observed JS gap 293 ms, completed/eligible/no issues (26 October). The bounded throughput
 fix reduces the previous individual sample's elapsed time by approximately 20%; the longest gap
 is essentially unchanged. Full automated checks pass. Installed revision:
-**`native-throughput-bindings`**. Use the latest section below; earlier instructions and candidate
+**`native-production-baseline`** for the new investigation (package runtime bytes are unchanged).
+Use the latest section below; earlier instructions and candidate
 sections are historical and should not be repeated to resume acceptance.
 
 The existing independent SDK 58 harness contains the new packed core with exact source-byte parity.
@@ -342,3 +343,59 @@ The core optimization is conservative: new builtin calls, helpers, EVAL and comp
 retain the original full-context execution path. It caches binding metadata, not results. Adding
 a builtin needs normal catalog/runtime/security support and tests; it does not need optimizer
 changes unless deliberately extending optimized coverage or changing existing specialized semantics.
+
+## Production-mode investigation — 26 October 2026
+
+The maintainer authorized a bounded investigation before accepting the remaining latency, with
+calculation/event/form logic preserved and optimization benefit weighed against maintenance cost.
+The current binding optimization stays unchanged. This step changes the device measurement fixture
+and adds a separate diagnostic source copy; no shipped core or binding runtime is modified.
+
+The generator `scripts/prepare-device-phase-profile.mjs` prepares that copy from the installed
+packed core, failing explicitly if its source anchors have changed. It copies source only, with no
+dependency installation, and registers an on-demand loader in the device entrypoint. The copy is
+marked DIAGNOSTIC ONLY. Normal controller measurements use the unchanged installed packages. The
+profile button loads the copy afterward for one separate warmed phase probe. Its source SHA-256 is
+`5b3147e4f1efb1c77fed277e69614a6dcd7d5255fc926943d65a2c708babcfc4`.
+
+The independent harness is ready. Do not regenerate/install it to run the following checks. If
+rebuilding harness source later, run the normal source generator and then this phase generator.
+The procedure follows [Expo production-mode guidance](https://docs.expo.dev/workflow/development-mode/).
+Production JavaScript in Expo Go is an initial comparison, not actual release-build acceptance.
+
+1. In the existing device harness terminal, stop the current Metro process if it is running.
+2. Start it with `npm start -- --no-dev --minify --max-workers 2`. Preserve the usual connection
+   option if needed, for example append `--tunnel ngrok` when using the installed legacy provider.
+3. Close and reopen the app in Expo Go. Keep SAFE off and DevTools closed.
+4. Check the header says **JS development mode: false**. If it says true, stop here and correct
+   the launch/reload; a development run is not the requested baseline.
+5. Tap **Large 200** and let loading settle.
+6. Tap **Programmatic prepare** once. Copy its on-screen JSON. Expect revision
+   `native-production-baseline`, fixture `large200`, `dev: false`, `hermes: true`, completed/eligible
+   and no issues. This action does not persist the prepared record.
+7. Tap **Large 2,000** and let loading settle. This resets to a fresh accepted fixture.
+8. Tap **Programmatic prepare** once. Copy its on-screen JSON with fixture `large2000` and the
+   same revision/environment flags. Do not repeat preparation on this already-refreshed tree for
+   comparison: the first preparation applies values locally and later reports can be smaller.
+9. Tap **Profile preparation (200)** once. Copy the on-screen report. It uses an independent
+   200-row captured input, without editing or persisting the displayed record. Cancellation remains
+   available. Expect eight uninstrumented samples: one cold and three warm with managed events off,
+   then the same with managed events on. A separate `phaseProbe` reports one warmed instrumented
+   run; `diagnosticSourceHash` must match the value above.
+
+Share those three JSONs. Console forwarding to the Expo terminal is disabled in production mode;
+use the selectable on-screen report. Walkthroughs 1/2 and the previous cancellation acceptance do
+not need repeating. Do not request another 2,000-row diagnostic loop at this stage.
+
+Core samples always evaluate the same accepted input. They report scheduling wait separately;
+"Cold" and "warm" describe evaluator-local caches, not a restarted Hermes VM.
+`computeMs`/phase `activeMs` are elapsed time less explicit host waits, not a CPU-profiler measurement.
+`managedValidation` includes its context/registration and dispatch subphases: do not add nested
+durations together. Probe timing includes instrumentation overhead and is never pooled with the
+baseline samples. The physical reports remain pending; no speedup or Plan 3 sign-off is claimed.
+
+Automated evidence: 77 Native Node tests; identical complete results and immutable inputs for
+200/2,000 rows, TRUSTED/SAFE, managed on/off; scope-level validation failures and pre-cancellation
+equivalence; production Android bundle with `__DEV__=false` verified. The bundle is 3,584,406 bytes,
+SHA-256 `1705f0cc87cc3167742fa88642eef1c2f4b465eba7c884ec4ae5410561238ce1`.
+This is bundle verification, not physical Hermes performance. No new package archive or release.
