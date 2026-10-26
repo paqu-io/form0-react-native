@@ -507,3 +507,28 @@ cause. Evidence: `logs/phase-loader-local-tunnel-parity.json`; only origin hashe
 are retained, without tunnel URLs. The next observation is the actual profiler button label near
 Programmatic prepare: **Profile preparation (200)**, **Profile phases v3 (200)**, or neither. Do not
 request another timing run or clear application data before establishing that observation.
+
+### Versioned launch after the old button was confirmed
+
+The maintainer confirms **Profile preparation (200)** is still displayed. The phone therefore has
+older UI than the server responses inspected above. Pressing `r` reports **No apps connected**;
+it cannot reload this session and does not establish cache versus launch/connection causality.
+
+The diagnostic generator now writes `phase-profile-v3.js`, which imports the existing `index.js`,
+and sets only the ignored device package's `main` to that entry. The live manifest now points to
+**/phase-profile-v3.bundle** instead of /index.bundle. The Expo slug, app identity, fixture storage,
+installed dependencies, evaluator and runtime remain unchanged. The running server picks up the
+new entry without a restart. This distinguishes the requested launch asset; handset recovery is
+still unverified.
+
+The manifest-path assertion fails before the entry change and passes after it. Local and public
+tunnel requests both return HTTP 200 with the v3 header/button/guard. The versioned entry's actual
+production lazy graph also passes with zero chunk loads and complete immutable TRUSTED/SAFE
+200-row parity. Native tests: 84 pass. Reports: `logs/phase-launch-before.json`,
+`phase-launch-after.json`, `phase-loader-versioned-launch.json`, `phase-launch-native-tests.log`.
+These are server/JS-VM checks, not Hermes timing.
+
+Next physical action: return to **Expo Go's home screen**, then scan the current Metro QR. Confirm
+**Profile phases v3 (200)**; with dev:false and SAFE off, run only that profile and share JSON.
+If the old button remains, stop and report it. No Metro restart, data clearing or Large 200/2,000
+rerun is requested. The previous force-stop/reload steps are historical and need not be repeated.
