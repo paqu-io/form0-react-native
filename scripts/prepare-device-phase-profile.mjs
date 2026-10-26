@@ -144,6 +144,11 @@ export async function prepareDevicePhaseProfile(target) {
   const packagePath = path.join(target, 'package.json');
   const pkg = JSON.parse(await readFile(packagePath, 'utf8'));
   pkg.main = launchEntry;
+  await cp(
+    new URL('../tests/device/production-cli.cjs', import.meta.url),
+    path.join(target, 'production-cli.cjs')
+  );
+  pkg.scripts.start = 'node ./production-cli.cjs start --clear';
   await writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
   return {
     sourceHash,
