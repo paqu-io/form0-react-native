@@ -4,9 +4,10 @@ Accepted-snapshot viewing, load permissions and event.mode are implemented; auto
 and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
 Walkthroughs 1/2 and prompt large-form cancellation pass on the Pixel 8a / Android API 37,
 Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The latest physical 2,000-row result is
-9,933 ms, observed JS gap 293 ms, completed/eligible/no issues (26 October). The bounded throughput
-fix reduces the previous individual sample's elapsed time by approximately 20%; the longest gap
-is essentially unchanged. Full automated checks pass. Installed revision:
+9,897 ms in production mode, observed JS gap 336 ms, completed/eligible/no issues (26 October).
+The preceding development sample was 9,933 ms/gap 293 ms; these are individual observations, not
+controlled repeated measurements. The 200-row production sample was 1,373 ms/gap 96 ms.
+Full automated checks pass. Installed revision:
 **`native-production-baseline`** for the new investigation (package runtime bytes are unchanged).
 Use the latest section below; earlier instructions and candidate
 sections are historical and should not be repeated to resume acceptance.
@@ -532,3 +533,52 @@ Next physical action: return to **Expo Go's home screen**, then scan the current
 **Profile phases v3 (200)**; with dev:false and SAFE off, run only that profile and share JSON.
 If the old button remains, stop and report it. No Metro restart, data clearing or Large 200/2,000
 rerun is requested. The previous force-stop/reload steps are historical and need not be repeated.
+
+## Current retry — SDK 58 production launch-asset cache
+
+The maintainer transcribed the old controls after a fresh launch, including **Profile preparation
+(200)**, with dev:false and no v3 marker. The correct project and exact tunnel both serve current
+source, so a successful HTTP source check is insufficient to establish handset execution.
+
+The SDK 58 sources expose a concrete production-only collision:
+
+- The installed Expo CLI emits a fixed `launchAsset.key` of `bundle`, even after its URL changes.
+- Android `ExpoUpdatesUpdate` carries that key into `AssetEntity`; `Loader.downloadAllAssets`
+  looks it up by key, merges a changed URL and reuses the existing local file when present.
+- `AssetDao.mergeAndUpdateAsset` updates the URL without clearing the existing relative path.
+  The production launcher executes that file. Development mode skips this asset download/cache.
+
+Sources: [SDK 58 loader](https://github.com/expo/expo/blob/sdk-58/packages/expo-updates/android/src/main/java/expo/modules/updates/loader/Loader.kt),
+[asset merge](https://github.com/expo/expo/blob/sdk-58/packages/expo-updates/android/src/main/java/expo/modules/updates/db/dao/AssetDao.kt),
+and [Expo Go launcher](https://github.com/expo/expo/blob/sdk-58/apps/expo-go/android/expoview/src/main/java/host/exp/exponent/ExpoUpdatesAppLoader.kt).
+This explains why changing only the filename was insufficient in the cache model. Physical cause
+confirmation is still pending; the model is not Android execution. The installed Windows ADB
+device-list command succeeds outside WSL sandboxing but reports no connected device. No device
+configuration or app storage was changed through ADB.
+
+The diagnostic generator now installs `production-cli.cjs` and changes only the ignored device
+package's start command to use it. The wrapper compiles the installed CLI manifest module in memory
+with one fresh launch-asset key per server session, before Expo serializes and signs the manifest.
+It writes no SDK source files, changes no dependency/version and clears no application data. Its
+single source anchor is checked and SDK drift fails explicitly. This is private harness compatibility
+code, excluded from published package contents, not an application or form-runtime API.
+
+Verification: real SDK JSON and native multipart responses carry the fresh stable session key.
+A source-guided Android cache model selects the old UI before this change and the current UI
+afterwards. The before assertion fails and the after assertion passes; 86 independent Native Node
+tests pass, including signing order and source-drift guards. Existing candidate/evaluator bytes are
+unchanged. Reports: `logs/production-asset-cache-before.json`,
+`production-asset-cache-after.json`, `production-asset-key-native-tests.log`; the probe is
+`production-asset-cache-probe.mjs`. The agent's localhost test server on 8108 was stopped; the
+maintainer's Metro on 8081 was left running.
+
+1. Stop the existing maintainer Metro with Ctrl+C.
+2. In the existing device folder run `npm start -- --tunnel ngrok --no-dev --minify --max-workers 2`.
+3. Confirm startup prints `production-launch-asset-key` and `session-key-enabled`.
+4. Force stop Expo Go, reopen it and scan the current QR.
+5. Confirm both v3 markers and **Profile phases v3 (200)**. With dev:false and SAFE off, tap that
+   button once and share the JSON. If the old UI persists, stop and report it.
+
+No reinstall, data clearing, SDK upgrade or 200/2,000-row controller rerun is requested. Retain all
+prior functional/cancellation acceptance and corrected controller measurements. Actual phase timings,
+the physical cache-workaround result and Plan 3 performance acceptance remain pending.
