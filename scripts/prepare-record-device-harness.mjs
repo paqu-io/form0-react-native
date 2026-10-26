@@ -89,7 +89,13 @@ await writeFile(
     2,
   ) + "\n",
 );
-for (const file of ["App.jsx", "record-fixtures.js", "preparation-profile.js"])
+for (const file of [
+  "App.jsx",
+  "record-fixtures.js",
+  "preparation-profile.js",
+  "metro.config.cjs",
+  "metro-proxy-headers.cjs",
+])
   await copyFile(
     path.join(repo, "tests/device", file),
     path.join(target, file),
