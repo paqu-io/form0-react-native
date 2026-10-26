@@ -9,7 +9,8 @@ The preceding development sample was 9,933 ms/gap 293 ms; these are individual o
 controlled repeated measurements. The latest 200-row production sample is 1,333 ms/gap 90 ms;
 the preceding production controls were 1,373/9,897 ms with gaps 96/336 ms.
 Full automated checks pass. Measured controller revision:
-**`native-literal-registration`**; final performance acceptance remains pending review of residual latency.
+**`native-literal-registration`**. The maintainer selected ending this tuning pass and proceeding
+to final review with residual latency documented. No further Android run is requested for this checkpoint.
 Use the latest section below; earlier instructions and candidate
 sections are historical and should not be repeated to resume acceptance.
 
@@ -666,3 +667,8 @@ Recommendation: retain this candidate, stop adding optimizations in this pass an
 acceptance with these limits documented. Desktop reference targets pass; physical two-second
 performance is not claimed. Maintainer acceptance of the residual latency remains pending. No further
 device test, SDK upgrade, release or issue closure is requested by these results. iOS stays deferred.
+
+The maintainer subsequently selected proceeding to final review. Retain these measurements and
+functional/cancellation acceptance without another tuning iteration. See
+`form0-core/analyses/PLAN_3_FINAL_REVIEW.md` for the review outcome and separate release prerequisites;
+its CLI-only identity correction changes no Android runtime or accepted candidate bytes.
