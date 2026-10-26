@@ -4,8 +4,9 @@ Accepted-snapshot viewing, load permissions and event.mode are implemented; auto
 and exact candidate hashes are in `form0-core/analyses/ACCEPTED_VIEW_VERIFICATION.md`.
 Walkthroughs 1/2 and prompt large-form cancellation pass on the Pixel 8a / Android API 37,
 Expo Go 58.0.5 / Hermes, SAFE off and DevTools closed. The latest physical 2,000-row result is
-12,400 ms, observed JS gap 294 ms, completed/eligible/no issues. A bounded throughput fix now passes
-full automated checks and awaits one physical comparison. Installed revision:
+9,933 ms, observed JS gap 293 ms, completed/eligible/no issues (26 October). The bounded throughput
+fix reduces the previous individual sample's elapsed time by approximately 20%; the longest gap
+is essentially unchanged. Full automated checks pass. Installed revision:
 **`native-throughput-bindings`**. Use the latest section below; earlier instructions and candidate
 sections are historical and should not be repeated to resume acceptance.
 
@@ -321,3 +322,23 @@ risk. Approximately 20% repeatable improvement was the automated checkpoint crit
 an Android SLA or permission to finalize Plan 3 without its remaining performance decision.
 
 Core implementation: `ea9adf0`; Native fixture revision: `15ac0a1`, both on existing development branches.
+
+## Focused comparison received — 26 October 2026
+
+The maintainer reports `native-throughput-bindings`: completed, eligible, 9,933 ms elapsed,
+293 ms maximum observed JS gap, no issues, for Large 2,000 on the Pixel 8a. The previous sample
+was 12,400 ms/gap 294 ms. The observed elapsed reduction is 2,467 ms (approximately 19.9%);
+the longest observed gap is essentially unchanged. Warm-up was not specified and no repeat set
+was supplied. This is a physical observation rather than a controlled phone benchmark.
+
+The focused comparison above is now complete; do not repeat it automatically. Walkthroughs 1/2
+and the prior prompt cancellation result retain acceptance. Raw transcription and normalized
+observations live in active-harness `logs/android-pixel8a-throughput-bindings.json`.
+Recommendation: stop this contained optimization pass with the remaining approximately ten-second
+large-record preparation latency explicit. Plan 3 performance acceptance remains a separate
+decision. No runtime/candidate/dependency changes or new device instructions accompany this update.
+
+The core optimization is conservative: new builtin calls, helpers, EVAL and complex JavaScript
+retain the original full-context execution path. It caches binding metadata, not results. Adding
+a builtin needs normal catalog/runtime/security support and tests; it does not need optimizer
+changes unless deliberately extending optimized coverage or changing existing specialized semantics.
