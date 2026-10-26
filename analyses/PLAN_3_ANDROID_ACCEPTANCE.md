@@ -425,3 +425,47 @@ or command change is needed. If it still fails, share the `[form0 device Metro]`
 only token counts/status, never URLs, query strings, header values, cookies or authorization. A
 `normalized-forwarded-chain` line confirms this guard ran. Actual tunnel recovery and physical
 performance results remain pending; do not infer recovery solely from the local synthetic tests.
+
+## Production measurements received; profiler loader corrected — 26 October 2026
+
+The Pixel now opens the production-mode fixture. The maintainer reports the following with
+`dev: false`, `hermes: true`, SAFE off, completed/eligible and no issues:
+
+| Fixture | Elapsed | Maximum observed JS gap |
+| --- | --- | --- |
+| Large 200 | 1,373 ms | 96 ms |
+| Large 2,000 | 9,897 ms | 336 ms |
+
+The maintainer corrected an initial 19,897 ms transcription to **9,897 ms**. Use the corrected value
+only. Warm-up/repeat classification was not supplied. The large sample is essentially unchanged
+from the earlier individual 9,933 ms development sample; no production-mode speedup is established.
+The form remains responsive according to the maintainer. Startup recovery is confirmed, although
+the original tunnel header values were not captured. Raw report: active-harness
+`logs/android-pixel8a-production-baseline.json`. Do not repeat these controller checks now.
+
+The profile button hit Expo's production chunk URL error because the diagnostic loader used dynamic
+`import()` and the native context has no `location`. The previous static export omitted the Expo Go
+`lazy=true` request seam, so it did not detect this failure. An actual Metro Android production graph
+with `lazy=true`, evaluated without `location`, reproduces the exact SDK error before the fix.
+
+The generator now uses a statically resolved `require()` inside the profile loader. Metro bundles
+the diagnostic module while keeping its initialization deferred until Profile is pressed. No global
+`location` shim, chunk-host URL, SDK/dependency change or product runtime change was introduced.
+The diagnostic evaluator source hash stays unchanged. The same compiled production-graph check now
+passes with no network chunk loads and identical complete 200-row TRUSTED/SAFE results and immutable
+inputs. This is a loader regression check in a JS VM, not actual Hermes performance acceptance.
+The independent Native suite passes 83 tests. Original unsplit-control and stale CI-server probes
+are retained and distinguished from the decisive `lazy=true` red/green reports.
+
+1. Stop and restart Metro using the same production command from the earlier steps.
+2. Close and reopen Expo Go. Confirm **JS development mode: false** and keep SAFE off/DevTools closed.
+3. Leave the default **Nested editing** fixture selected and tap **Profile preparation (200)** once.
+   The profile creates its own input. No fresh Large 2,000 run is needed.
+4. Copy the on-screen JSON. Expect `revision: "native-production-phases-bundled"`,
+   `diagnosticLoading: "bundled-require"`, `dev: false`, `hermes: true`, the same diagnostic source
+   hash, eight control samples and a separate `phaseProbe`.
+
+That is the only remaining requested measurement at this checkpoint. Phase interpretation and any
+further runtime optimization remain pending; current calculations/events/form logic are unchanged.
+Evidence: active-harness `phase-loader-production.mjs`, `logs/phase-loader-before-lazy.json`,
+`phase-loader-after-bundled-restarted.json` and `phase-loader-native-tests-final.log`.
