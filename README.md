@@ -71,7 +71,13 @@ const schema = {
 };
 
 export function InspectionForm() {
-  return <FormRenderer schema={schema} onSubmit={(record) => console.log(record)} />;
+  return (
+    <FormRenderer
+      schema={schema}
+      engineOptions={{ events: { recordKind: 'new' } }}
+      onSubmit={(record) => console.log(record)}
+    />
+  );
 }
 ```
 
@@ -86,7 +92,11 @@ const renderers = {
   VideoField: CustomVideoField,
 };
 
-<FormRenderer schema={schema} renderers={renderers} />;
+<FormRenderer
+  schema={schema}
+  engineOptions={{ events: { recordKind: 'new' } }}
+  renderers={renderers}
+/>;
 ```
 
 > [!IMPORTANT]
@@ -105,8 +115,8 @@ field. Automatic main-record dispatch is preserved: the root engine still receiv
 when ready, `edit-record` when entering edit mode, and `change` after a root field edit.
 
 If your application relied on the previous automatic row-engine dispatch, review its handlers before
-upgrading. This remains the default behavior when `engineOptions.events.lifecycle` is disabled.
-Enable the opt-in integration described below for the portable repeatable-event contract tracked in core
+upgrading. Explicit `engineOptions.events.lifecycle: false` preserves that legacy behavior.
+Use the managed integration described below for the portable repeatable-event contract tracked in core
 [#98](https://github.com/paqu-io/form0-core/issues/98) and
 [#102](https://github.com/paqu-io/form0-core/issues/102).
 
@@ -157,6 +167,7 @@ const findingsByScope = new Map();
 <FormRenderer
   schema={schema}
   engineOptions={{
+    events: { recordKind: 'existing' },
     diagnostics: { console: false },
     onDiagnostics(snapshot, meta) {
       if (meta.kind === 'scope-ended') findingsByScope.delete(meta.scopeId);
@@ -180,17 +191,16 @@ Calculation diagnostics remain outside `state.errors`, saved snapshots and recor
 
 ## Managed events and save preparation
 
-The managed event integration uses **form0-core 0.5.1 or later**. Expanded automatic lifecycle
-behavior is opt-in. Without it, the existing root load/edit/change behavior remains available.
+The managed event integration uses **form0-core 0.8.1 or later**. Lifecycle events default on.
+The host must supply `events.recordKind`; missing classification is a configuration error.
+Set `lifecycle: false` explicitly to preserve legacy root load/edit/change behavior.
 
 ```jsx
 <FormRenderer
   schema={schema}
   engineOptions={{
     events: {
-      lifecycle: true,
       recordKind: 'existing', // explicitly 'new' or 'existing'; never inferred from values
-      fieldInteractions: ['focus', 'blur'],
     },
     onEventController: (controller) => {
       controllerRef.current = controller;
@@ -246,12 +256,12 @@ Validation and cancel/unload handlers reject value/UI operations and promises. `
 the current attempted action; `isValid` describes intrinsic validity, with combined validity in the
 returned summary. Calculation diagnostics alone never block saving.
 
-Opt-in opening evaluates effective values, runs load, then new/edit when entering editing; readonly
+Managed opening evaluates effective values, runs load, then new/edit when entering editing; readonly
 opening runs load only. Rows use their actual new/existing classification and repeatable events.
 User field edits notify change after updates settle; accepted row membership changes carry `action`
 (`add`, `edit`, `remove`) and `affectedInstancePath` on the owning repeatable listener. Enabled status
 fields notify `change-status` for user changes only. Defaults, SETVALUE and calculations emit no
-additional automatic change. Extra focus/blur/click interactions default to none; the built-in text
+additional automatic change. Focus/blur/click interactions default on; set `fieldInteractions: []` to opt out. By default, the built-in text
 and numeric inputs support them (Native click means input press). Other/custom controls may dispatch
 supported interactions explicitly from their own event handlers.
 

@@ -188,12 +188,12 @@ export type FormRendererEventController = {
 
 export type FormRendererEventOptions =
   | {
-      lifecycle: boolean;
+      lifecycle?: boolean;
       recordKind: 'new' | 'existing';
       fieldInteractions?: ('focus' | 'blur' | 'click')[];
     }
   | {
-      lifecycle?: false;
+      lifecycle: false;
       recordKind?: 'new' | 'existing';
       fieldInteractions?: ('focus' | 'blur' | 'click')[];
     };

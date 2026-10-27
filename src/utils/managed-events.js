@@ -55,12 +55,12 @@ export function ownedCollectionSignature(tree) {
 }
 
 export function normalizeEventOptions(events = {}) {
-  const lifecycle = events.lifecycle === true;
+  const lifecycle = events.lifecycle !== false;
   if (lifecycle && !['new', 'existing'].includes(events.recordKind))
     throw new Error(
       'form0: events.recordKind must be "new" or "existing" when lifecycle is enabled.'
     );
-  const interactions = events.fieldInteractions ?? [];
+  const interactions = events.fieldInteractions ?? ['focus', 'blur', 'click'];
   if (
     !Array.isArray(interactions) ||
     interactions.some((type) => !['focus', 'blur', 'click'].includes(type))

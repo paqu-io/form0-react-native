@@ -37,6 +37,55 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       ],
     },
   });
+  testCase('Native default lifecycle requires classification', () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<FormRenderer schema={schema()} />)).toThrow(/recordKind/);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+  for (const recordKind of ['new', 'existing'])
+    testCase(`Native default ${recordKind} lifecycle and input interactions`, async () => {
+      const form = schema();
+      const seen = vi.fn();
+      form.form.events = {
+        code: `
+        ON('load-record', function() { seen('load'); });
+        ON('new-record', function() { seen('new'); });
+        ON('edit-record', function() { seen('edit'); });
+        ON('focus', 'tax', function() { seen('focus'); });
+        ON('blur', 'tax', function() { seen('blur'); });
+        ON('click', 'tax', function() { seen('click'); });
+      `,
+      };
+      render(
+        <FormRenderer
+          schema={form}
+          initialSnapshot={initial()}
+          engineOptions={{
+            security,
+            helpers: { seen },
+            events: { recordKind },
+            diagnostics: { console: false },
+          }}
+        />
+      );
+      await waitFor(() =>
+        expect(seen.mock.calls.map(([v]) => v)).toEqual([
+          'load',
+          recordKind === 'new' ? 'new' : 'edit',
+        ])
+      );
+      const input = screen.getByDisplayValue('0.2');
+      fireEvent.focus(input);
+      fireEvent.blur(input);
+      fireEvent.click(input);
+      await waitFor(() =>
+        expect(seen.mock.calls.slice(-3).map(([v]) => v)).toEqual(['focus', 'blur', 'click'])
+      );
+    });
+
   testCase(
     'Native applying an evaluated submission does not replay root calculations',
     async () => {
@@ -49,7 +98,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         <FormRenderer
           schema={form}
           initialSnapshot={initial()}
-          engineOptions={{
+          engineOptions={{events: { recordKind: 'existing' },
             security,
             helpers: { countRoot },
             diagnostics: { console: false },
@@ -146,7 +195,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         schema={form}
         initialSnapshot={seed}
         onSnapshotChange={snapshots}
-        engineOptions={{ security, diagnostics: { console: false } }}
+        engineOptions={{events: { recordKind: 'existing' },  security, diagnostics: { console: false } }}
       />
     );
     await screen.findByText('20');
@@ -197,7 +246,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         initialSnapshot: seed,
         onSubmit: save,
         onSnapshotChange: snapshots,
-        engineOptions: { security, diagnostics: { console: false } },
+        engineOptions: {events: { recordKind: 'existing' },  security, diagnostics: { console: false } },
       };
       const mounted = render(<FormRenderer {...props} mode="edit" />);
       fireEvent.click(await screen.findByText('Submit'));
@@ -434,7 +483,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
             initialSnapshot={seed}
             mode={rootReadOnly ? 'readonly' : 'edit'}
             repeatableEntryMode={rootReadOnly ? 'edit' : 'readonly'}
-            engineOptions={{ security, diagnostics: { console: false } }}
+            engineOptions={{events: { recordKind: 'existing' },  security, diagnostics: { console: false } }}
           />
         );
         fireEvent.click(await screen.findByText('lines'));
@@ -470,7 +519,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
           schema={schema()}
           initialSnapshot={seed}
           onSubmit={onSubmit}
-          engineOptions={{
+          engineOptions={{events: { recordKind: 'existing' },
             security,
             diagnostics: { console: false },
             onEventController: (value) => (controller = value),
@@ -501,7 +550,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
           initialSnapshot={initial()}
           onSubmit={onSubmit}
           submissionOptions={{ allowRetain: true }}
-          engineOptions={{ security, diagnostics: { console: false } }}
+          engineOptions={{events: { recordKind: 'existing' },  security, diagnostics: { console: false } }}
         />
       );
       await screen.findByText('Submit');
@@ -530,7 +579,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         <FormRenderer
           schema={form}
           initialSnapshot={initial()}
-          engineOptions={{
+          engineOptions={{events: { recordKind: 'existing' },
             security,
             diagnostics: { console: false },
             onEventController: (value) => (controller = value),
@@ -570,7 +619,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
           initialSnapshot={initial()}
           onSave={onSave}
           primaryActionMode="save"
-          engineOptions={{
+          engineOptions={{events: { recordKind: 'existing' },
             security,
             diagnostics: { console: false },
             onEventController: (value) => {

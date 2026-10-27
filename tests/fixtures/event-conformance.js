@@ -1,6 +1,7 @@
 import { createFormEngine } from 'form0-core';
 import {
   createEventSession,
+  normalizeEventOptions,
   completeEventOperations,
   copyEventData,
   mergeCustomValidation,
@@ -117,6 +118,29 @@ export function eventFixture({
 }
 
 export function eventConformance(test, assert) {
+  test('binding defaults require classification, enable lifecycle and interactions, and preserve opt-outs', () => {
+    assert.throws(() => normalizeEventOptions(), /recordKind/);
+    assert.throws(() => normalizeEventOptions({ recordKind: 'unknown' }), /recordKind/);
+    for (const recordKind of ['new', 'existing']) {
+      const source = Object.freeze({ recordKind });
+      const options = normalizeEventOptions(source);
+      assert.equal(options.lifecycle, true);
+      assert.equal(options.recordKind, recordKind);
+      assert.deepEqual(options.fieldInteractions, ['focus', 'blur', 'click']);
+      options.fieldInteractions.pop();
+      assert.deepEqual(normalizeEventOptions(source).fieldInteractions, ['focus', 'blur', 'click']);
+    }
+    assert.deepEqual(normalizeEventOptions({ lifecycle: false, fieldInteractions: [] }), {
+      lifecycle: false,
+      recordKind: undefined,
+      fieldInteractions: [],
+    });
+    assert.deepEqual(normalizeEventOptions({ lifecycle: false }).fieldInteractions, [
+      'focus',
+      'blur',
+      'click',
+    ]);
+  });
   test('validation blocks submit, permits invalid root drafts and replaces custom findings without evaluations', async () => {
     const fixture = eventFixture({
       code: "ON('validate-record', e => { if ($input < 6) INVALID('Reach six.'); });",
