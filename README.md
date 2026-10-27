@@ -261,9 +261,10 @@ opening runs load only. Rows use their actual new/existing classification and re
 User field edits notify change after updates settle; accepted row membership changes carry `action`
 (`add`, `edit`, `remove`) and `affectedInstancePath` on the owning repeatable listener. Enabled status
 fields notify `change-status` for user changes only. Defaults, SETVALUE and calculations emit no
-additional automatic change. Focus/blur/click interactions default on; set `fieldInteractions: []` to opt out. By default, the built-in text
-and numeric inputs support them (Native click means input press). Other/custom controls may dispatch
-supported interactions explicitly from their own event handlers.
+additional automatic change. Interaction subscriptions default on; set `fieldInteractions: []` to
+opt out. Built-in text/numeric inputs emit focus and blur; choice controls use change. Automatic
+click is reserved for supported activation fields. There is currently no HyperlinkField and no
+built-in control automatically emits click. Explicit host controller dispatch remains available.
 
 For a row request, supply `instancePath` or the active `scopeId` from diagnostics metadata. Full paths
 use schema keys and existing row IDs, with explicit positional fallback; positional paths require

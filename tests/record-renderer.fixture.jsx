@@ -48,7 +48,9 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
   for (const recordKind of ['new', 'existing'])
     testCase(`Native default ${recordKind} lifecycle and input interactions`, async () => {
       const form = schema();
+      form.form.elements.splice(1, 0, field('TextField', 'note'));
       const seen = vi.fn();
+      let controller;
       form.form.events = {
         code: `
         ON('load-record', function() { seen('load'); });
@@ -57,6 +59,9 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
         ON('focus', 'tax', function() { seen('focus'); });
         ON('blur', 'tax', function() { seen('blur'); });
         ON('click', 'tax', function() { seen('click'); });
+        ON('focus', 'note', function() { seen('note:focus'); });
+        ON('blur', 'note', function() { seen('note:blur'); });
+        ON('click', 'note', function() { seen('note:click'); });
       `,
       };
       render(
@@ -66,6 +71,7 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
           engineOptions={{
             security,
             helpers: { seen },
+            onEventController: (next) => (controller = next),
             events: { recordKind },
             diagnostics: { console: false },
           }}
@@ -81,9 +87,28 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
       fireEvent.focus(input);
       fireEvent.blur(input);
       fireEvent.click(input);
+      const note = screen.getByDisplayValue('');
+      fireEvent.focus(note);
+      fireEvent.blur(note);
+      fireEvent.click(note);
       await waitFor(() =>
-        expect(seen.mock.calls.slice(-3).map(([v]) => v)).toEqual(['focus', 'blur', 'click'])
+        expect(seen.mock.calls.slice(2).map(([v]) => v)).toEqual([
+          'focus',
+          'blur',
+          'note:focus',
+          'note:blur',
+        ])
       );
+      await act(async () => {
+        expect((await controller.dispatch({ type: 'click', fieldKey: 'tax' })).issues).toEqual([]);
+      });
+      expect(seen.mock.calls.slice(2).map(([v]) => v)).toEqual([
+        'focus',
+        'blur',
+        'note:focus',
+        'note:blur',
+        'click',
+      ]);
     });
 
   testCase(

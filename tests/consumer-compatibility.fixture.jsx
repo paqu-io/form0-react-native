@@ -68,6 +68,15 @@ export function runConsumerCompatibility(FormRenderer, platform) {
           kind === 'builtins' ? builtinFixture(FIELD_SPECS) : fieldFixture(FIELD_SPECS),
           kind
         );
+        const unexpectedInteraction = vi.fn();
+        if (kind === 'fields')
+          fixture.schema.form.events.code += ['single', 'multi']
+            .flatMap((name) =>
+              ['focus', 'blur', 'click'].map(
+                (type) => `\nON('${type}', '${name}', function() { unexpectedInteraction(); });`
+              )
+            )
+            .join('');
         let controller, latest;
         const snapshots = vi.fn();
         render(
@@ -80,6 +89,7 @@ export function runConsumerCompatibility(FormRenderer, platform) {
             onSnapshotChange={snapshots}
             engineOptions={{
               security,
+              helpers: { unexpectedInteraction },
               diagnostics: { console: false },
               events: { lifecycle: true, recordKind: 'existing' },
               onEventController: (value) => (controller = value),
@@ -169,6 +179,7 @@ export function runConsumerCompatibility(FormRenderer, platform) {
           await act(async () => {
             expect((await controller.prepareSave({ intent: 'submit' })).eligible).toBe(true);
           });
+          expect(unexpectedInteraction).not.toHaveBeenCalled();
         }
       });
 }
