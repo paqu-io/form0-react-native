@@ -300,10 +300,17 @@ ON('validate-repeatable', 'rows', function() { if ($cost < 0) INVALID('Row cost 
       links: [],
       status: 'open',
     };
+    // Keep JSON values intact while escaping characters unsafe in embedded JavaScript.
+    const literal = (value) =>
+      JSON.stringify(value)
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
     const write = (values) =>
       Object.entries(values)
         .filter(([name]) => !['section_note', 'stage'].includes(name))
-        .map(([name, value]) => `SETVALUE(${JSON.stringify(name)}, ${JSON.stringify(value)});`)
+        .map(([name, value]) => `SETVALUE(${literal(name)}, ${literal(value)});`)
         .join('\n');
     fixture.schema.form.events = {
       code: `ON('change', 'stage', function() { if ($stage === 1) { ${write(changed)} } else if ($stage === 2) { ${write(cleared)} } else { ${write(fixture.snapshot.values)} } });`,
