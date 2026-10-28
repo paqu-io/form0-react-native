@@ -46,6 +46,7 @@
     }
   ],
   "license": "MIT",
+  "funding": "https://opencollective.com/form0",
   "dependencies": {
     "form0-core": "^0.8.1"
   },
