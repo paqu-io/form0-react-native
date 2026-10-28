@@ -1,9 +1,11 @@
+import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { validateSchema } from 'form0-core';
 import { buildRepeatableInfo } from './utils/repeatable-manager.js';
 import { ensureKeys } from './utils/ensure-keys';
+import { normalizeChoiceOperationValue } from './utils/choice-operation-values.js';
 
 const createEmptyState = () => ({
   values: {},
@@ -47,10 +49,17 @@ function prepareSchema(schema) {
   return copy;
 }
 
-export function useFormEngine(schema, initialValues = {}, overrideValues, options = {}) {
+export function useFormEngine(
+  schema,
+  initialValues = {},
+  overrideValues,
+  options = {},
+  mode = 'edit'
+) {
   const [state, setState] = useState(createEmptyState);
   const [engineReadyVersion, setEngineReadyVersion] = useState(0);
   const engineRef = useRef(null);
+  const modeRef = useEngineMode(engineRef, mode, () => syncState());
   const initialValuesRef = useRef(initialValues || {});
   const overrideValuesRef = useRef(overrideValues || null);
   const optionsRef = useRef(options || {});
@@ -95,12 +104,14 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
 
   const diagnosticGeneration = useMemo(() => ({}), [preparedSchema, initialValuesSignature]);
 
+  const fieldOwnership = useMemo(
+    () => buildRepeatableInfo(preparedSchema?.form?.elements || []).fieldOwnership,
+    [preparedSchema]
+  );
   const diagnosticFieldNames = useMemo(
     () =>
-      [...buildRepeatableInfo(preparedSchema?.form?.elements || []).fieldOwnership]
-        .filter(([, info]) => info.parentPath.length === 0)
-        .map(([name]) => name),
-    [preparedSchema]
+      [...fieldOwnership].filter(([, info]) => info.parentPath.length === 0).map(([name]) => name),
+    [fieldOwnership]
   );
   const {
     createEngine: createObservedEngine,
@@ -120,10 +131,16 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
         return;
       }
       const engine = createObservedEngine({
+        mode: modeRef.current,
         schema: preparedSchema,
         initialValues: { ...(seedValues || {}) },
         helpers: optionsRef.current.helpers,
         security: optionsRef.current.security,
+        recordSource: {
+          repeatable: () => optionsRef.current.recordRepeatable?.() || {},
+          setRepeatable: (next) => optionsRef.current.setRecordRepeatable?.(next),
+          notify: () => syncState(),
+        },
       });
       engine.eval();
       engineRef.current = engine;
@@ -180,7 +197,9 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
             );
             return;
           }
-          pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
+          pendingValueUpdates[fieldDataName] = cloneDeep(
+            normalizeChoiceOperationValue(fieldOwnership.get(fieldDataName)?.field, valueToSet)
+          );
           return;
         }
 
@@ -196,7 +215,7 @@ export function useFormEngine(schema, initialValues = {}, overrideValues, option
         setValues(pendingValueUpdates);
       }
     },
-    [setValues]
+    [setValues, fieldOwnership]
   );
 
   const processOperations = useCallback(

@@ -71,7 +71,13 @@ const schema = {
 };
 
 export function InspectionForm() {
-  return <FormRenderer schema={schema} onSubmit={(record) => console.log(record)} />;
+  return (
+    <FormRenderer
+      schema={schema}
+      engineOptions={{ events: { recordKind: 'new' } }}
+      onSubmit={(record) => console.log(record)}
+    />
+  );
 }
 ```
 
@@ -86,7 +92,11 @@ const renderers = {
   VideoField: CustomVideoField,
 };
 
-<FormRenderer schema={schema} renderers={renderers} />;
+<FormRenderer
+  schema={schema}
+  engineOptions={{ events: { recordKind: 'new' } }}
+  renderers={renderers}
+/>;
 ```
 
 > [!IMPORTANT]
@@ -105,8 +115,8 @@ field. Automatic main-record dispatch is preserved: the root engine still receiv
 when ready, `edit-record` when entering edit mode, and `change` after a root field edit.
 
 If your application relied on the previous automatic row-engine dispatch, review its handlers before
-upgrading. This remains the default behavior when `engineOptions.events.lifecycle` is disabled.
-Enable the opt-in integration described below for the portable repeatable-event contract tracked in core
+upgrading. Explicit `engineOptions.events.lifecycle: false` preserves that legacy behavior.
+Use the managed integration described below for the portable repeatable-event contract tracked in core
 [#98](https://github.com/paqu-io/form0-core/issues/98) and
 [#102](https://github.com/paqu-io/form0-core/issues/102).
 
@@ -157,6 +167,7 @@ const findingsByScope = new Map();
 <FormRenderer
   schema={schema}
   engineOptions={{
+    events: { recordKind: 'existing' },
     diagnostics: { console: false },
     onDiagnostics(snapshot, meta) {
       if (meta.kind === 'scope-ended') findingsByScope.delete(meta.scopeId);
@@ -180,17 +191,16 @@ Calculation diagnostics remain outside `state.errors`, saved snapshots and recor
 
 ## Managed events and save preparation
 
-The managed event integration uses **form0-core 0.5.1 or later**. Expanded automatic lifecycle
-behavior is opt-in. Without it, the existing root load/edit/change behavior remains available.
+The managed event integration uses **form0-core 0.8.1 or later**. Lifecycle events default on.
+The host must supply `events.recordKind`; missing classification is a configuration error.
+Set `lifecycle: false` explicitly to preserve legacy root load/edit/change behavior.
 
 ```jsx
 <FormRenderer
   schema={schema}
   engineOptions={{
     events: {
-      lifecycle: true,
       recordKind: 'existing', // explicitly 'new' or 'existing'; never inferred from values
-      fieldInteractions: ['focus', 'blur'],
     },
     onEventController: (controller) => {
       controllerRef.current = controller;
@@ -246,14 +256,15 @@ Validation and cancel/unload handlers reject value/UI operations and promises. `
 the current attempted action; `isValid` describes intrinsic validity, with combined validity in the
 returned summary. Calculation diagnostics alone never block saving.
 
-Opt-in opening evaluates effective values, runs load, then new/edit when entering editing; readonly
+Managed opening evaluates effective values, runs load, then new/edit when entering editing; readonly
 opening runs load only. Rows use their actual new/existing classification and repeatable events.
 User field edits notify change after updates settle; accepted row membership changes carry `action`
 (`add`, `edit`, `remove`) and `affectedInstancePath` on the owning repeatable listener. Enabled status
 fields notify `change-status` for user changes only. Defaults, SETVALUE and calculations emit no
-additional automatic change. Extra focus/blur/click interactions default to none; the built-in text
-and numeric inputs support them (Native click means input press). Other/custom controls may dispatch
-supported interactions explicitly from their own event handlers.
+additional automatic change. Interaction subscriptions default on; set `fieldInteractions: []` to
+opt out. Built-in text/numeric inputs emit focus and blur; choice controls use change. Automatic
+click is reserved for supported activation fields. There is currently no HyperlinkField and no
+built-in control automatically emits click. Explicit host controller dispatch remains available.
 
 For a row request, supply `instancePath` or the active `scopeId` from diagnostics metadata. Full paths
 use schema keys and existing row IDs, with explicit positional fallback; positional paths require
@@ -273,3 +284,25 @@ Native File/Blob media handles retain standard metadata and immutable binary con
 on these handles are outside native serialization; attach custom metadata to the surrounding plain
 record object. Async schema handlers remain unsupported. The form0-core 0.5.1 minimum includes
 the media compatibility correction.
+
+## Repeatable entry opening mode
+
+`repeatableEntryMode` accepts `'readonly'` (default) or `'edit'` for existing rows at every nesting
+level. View mode offers Edit when the containing record permits editing. New rows start in edit
+mode. Read-only parents allow browsing descendants but prevent editing, adding and removing them;
+`repeatableEntryMode="edit"` does not override that restriction. This is a renderer option, with no
+schema or saved-record change.
+
+View mode displays supplied accepted calculations and evaluates conditions and intrinsic validation
+without recalculating or applying missing defaults. Edit starts calculations using current permitted
+ancestor values. For accepted child totals 110/220 and root 330, viewing keeps those values; editing
+line 1 computes 120, saving it produces root 340, and cancelling keeps root 330. Unsaved selections
+after persistence failure remain working values when switching back to View.
+
+Managed opening awaits load, then new/edit for direct editing. View → Edit runs edit without replaying
+load. Handlers receive `event.mode: 'readonly' | 'edit'` for their executing scope. View permits reads,
+ALERT and engine-lifetime ON/OFF, but rejects a complete operation batch containing record writes
+before host delegation. Guard editable-load setters or move writable initialization to new/edit.
+Validation/close phases retain stricter restrictions. These capabilities require the coordinated
+core release containing engine mode control and readonly scoped evaluation; no schema or record
+migration is introduced.

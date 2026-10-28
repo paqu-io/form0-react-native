@@ -190,7 +190,6 @@ export function FieldRenderer({
     ...(eventInteractions && ['TextField', 'NumericField'].includes(field.type)
       ? {
           onBlur: () => eventInteractions('blur', field.data_name),
-          onPressIn: () => eventInteractions('click', field.data_name),
         }
       : {}),
     ref: inputRef,

@@ -1,5 +1,7 @@
+import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
+import { normalizeChoiceOperationValue } from './utils/choice-operation-values.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildRepeatableInfo,
@@ -45,6 +47,7 @@ export function useRepeatableInstanceEngine({
   initialInstance = {},
   diagnosticInstancePath = [],
   diagnosticsActive = true,
+  mode = 'edit',
   options = {},
 }) {
   const [state, setState] = useState(() => createEmptyState(repInfo));
@@ -53,6 +56,7 @@ export function useRepeatableInstanceEngine({
     cloneDeep(initialInstance?.repeatable || {})
   );
   const engineRef = useRef(null);
+  const modeRef = useEngineMode(engineRef, mode, (engine) => syncState(engine));
   const baseValuesRef = useRef(baseValues || {});
   const valuesRef = useRef(initialInstance?.values || {});
   const repeatableStateRef = useRef(cloneDeep(initialInstance?.repeatable || {}));
@@ -61,6 +65,14 @@ export function useRepeatableInstanceEngine({
     () => buildInstanceSeedSignature(initialInstance),
     [initialInstance]
   );
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine?.recordCoordinator?.hasCollections())
+      Promise.resolve(engine.eval()).catch((error) => {
+        if (engineRef.current === engine)
+          console.warn('form0: accepted collection evaluation failed.', error);
+      });
+  }, [repeatableState]);
   const baseValuesSignature = useMemo(() => JSON.stringify(baseValues || {}), [baseValues]);
 
   useEffect(() => {
@@ -143,10 +155,30 @@ export function useRepeatableInstanceEngine({
         ...(instanceValues || {}),
       };
       const engine = createObservedEngine({
+        mode: modeRef.current,
         schema,
         initialValues: mergedValues,
         helpers: optionsRef.current.helpers,
         security: optionsRef.current.security,
+        recordSource: {
+          metadata: () => initialInstance,
+          pickValues: (values) =>
+            Object.fromEntries(
+              fieldNames
+                .filter((name) => Object.hasOwn(values, name))
+                .map((name) => [name, values[name]])
+            ),
+          repeatable: () => repeatableStateRef.current,
+          setRepeatable: (next) => {
+            repeatableStateRef.current = next;
+            setRepeatableState(next);
+          },
+          notify: (nextEngine) => {
+            const next = reduceEngineState(nextEngine.getState());
+            valuesRef.current = next.values;
+            setState(next);
+          },
+        },
       });
       engine.eval();
       return engine;
@@ -261,7 +293,9 @@ export function useRepeatableInstanceEngine({
             );
             return;
           }
-          pendingValueUpdates[fieldDataName] = cloneDeep(valueToSet);
+          pendingValueUpdates[fieldDataName] = cloneDeep(
+            normalizeChoiceOperationValue(repInfo?.fields?.get(fieldDataName)?.field, valueToSet)
+          );
           return;
         }
 
@@ -277,7 +311,7 @@ export function useRepeatableInstanceEngine({
         setValues(pendingValueUpdates);
       }
     },
-    [setValues]
+    [setValues, repInfo]
   );
 
   const processOperations = useCallback(

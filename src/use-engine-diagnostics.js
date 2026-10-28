@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useContext } from 'react';
+import { RecordCoordinatorContext, attachRecordEngine } from './record-context.jsx';
 import {
   createBindingDiagnosticScope,
   createDiagnosticEngine,
@@ -12,6 +13,8 @@ export function useEngineDiagnostics(
   active = true,
   generation
 ) {
+  const recordCoordinator = useContext(RecordCoordinatorContext);
+  const engineRef = useRef(null);
   const optionsRef = useRef(options || {});
   const attributionRef = useRef({ fieldNames, instancePath });
   const scopeRef = useRef(null);
@@ -29,6 +32,7 @@ export function useEngineDiagnostics(
     scopeRef.current?.setConsole(options?.diagnostics?.console);
   });
   const endScope = useCallback(() => {
+    engineRef.current?.endRecordScope?.();
     scopeRef.current?.end();
     scopeRef.current = null;
   }, []);
@@ -46,21 +50,38 @@ export function useEngineDiagnostics(
     (config) => {
       const scope = startScope();
       try {
-        return createDiagnosticEngine({
-          ...config,
-          eventScope: { scopeId: scope.scopeId, instancePath: attributionRef.current.instancePath },
+        const { recordSource, ...engineConfig } = config;
+        const engine = createDiagnosticEngine({
+          ...engineConfig,
+          eventScope: {
+            scopeId: scope.scopeId,
+            instancePath: attributionRef.current.instancePath,
+          },
           helpers: optionsRef.current.helpers,
           security: optionsRef.current.security,
           onWarning: (warning) =>
             scope.isActive?.() ? optionsRef.current.onWarning?.(warning) : undefined,
           onDiagnostics: (snapshot) => scope.accept(snapshot),
         });
+        engineRef.current = engine;
+        if (recordCoordinator) {
+          if (!attributionRef.current.instancePath.length)
+            recordCoordinator.setSchema(config.schema);
+          attachRecordEngine(
+            engine,
+            recordCoordinator,
+            attributionRef.current.instancePath,
+            recordSource,
+            (snapshot) => scope.accept(snapshot)
+          );
+        }
+        return engine;
       } catch (error) {
         endScope();
         throw error;
       }
     },
-    [startScope, endScope]
+    [startScope, endScope, recordCoordinator]
   );
   const acceptWorkerDiagnostics = useCallback((payload) => {
     const scope = scopeRef.current;
@@ -76,7 +97,10 @@ export function useEngineDiagnostics(
   const getScope = useCallback(
     () =>
       scopeRef.current?.isActive?.()
-        ? { scopeId: scopeRef.current.scopeId, instancePath: attributionRef.current.instancePath }
+        ? {
+            scopeId: scopeRef.current.scopeId,
+            instancePath: attributionRef.current.instancePath,
+          }
         : null,
     []
   );

@@ -62,9 +62,13 @@ export type FormRendererSubmitMeta = {
   rawValues?: Record<string, unknown>;
   validationSummary?: FormRendererValidationSummary;
   timestamps?: FormRendererSnapshotTimestamps;
+  preparationId?: string;
+  freshness?: FormRendererFreshness;
 };
 
 export type FormRendererSaveMeta = {
+  preparationId?: string;
+  freshness?: FormRendererFreshness;
   validationSummary: FormRendererValidationSummary;
   dirty: boolean;
 };
@@ -119,12 +123,22 @@ export type FormRendererEventIssue = {
 export type FormRendererEventResult = {
   status: 'completed' | 'failed';
   operations: FormRendererEngineOperation[];
-  validationIssues: { message: string; instancePath: FormRendererDiagnosticInstancePath }[];
+  validationIssues: {
+    message: string;
+    instancePath: FormRendererDiagnosticInstancePath;
+  }[];
   issues: FormRendererEventIssue[];
 };
 
 export type FormRendererSavePreparation = {
-  status: 'completed' | 'failed';
+  status: 'completed' | 'failed' | 'requires_decision' | 'cancelled';
+  preparationId?: string;
+  reviewId?: string;
+  choices?: ('refresh' | 'retain' | 'cancel')[];
+  changeCount?: number;
+  childChangeCount?: number;
+  freshness?: FormRendererFreshness;
+  diagnostics?: FormRendererCalculationDiagnostic[];
   eligible: boolean;
   payload: Record<string, unknown> | null;
   meta?: Record<string, unknown>;
@@ -132,10 +146,41 @@ export type FormRendererSavePreparation = {
   issues: FormRendererEventIssue[];
 };
 
+export type FormRendererFreshness = {
+  version: 1;
+  status: 'current' | 'pending';
+  schemaRevision: string;
+  affected: {
+    instancePath: FormRendererDiagnosticInstancePath;
+    fields: { fieldName: string; fieldKey: string }[];
+  }[];
+};
+
 export type FormRendererEventController = {
+  getSaveChanges: (request: { preparationId: string; offset?: number; limit?: number }) => Promise<{
+    status: string;
+    total?: number;
+    offset?: number;
+    changes?: {
+      instancePath: FormRendererDiagnosticInstancePath;
+      fieldName: string;
+      fieldKey: string;
+      before: unknown;
+      after: unknown;
+    }[];
+    issues: FormRendererEventIssue[];
+  }>;
+  acknowledgeSave: (request: { preparationId: string }) => {
+    status: string;
+    issues: FormRendererEventIssue[];
+    freshness?: FormRendererFreshness;
+  };
+
   dispatch: (request: FormRendererEventRequest) => Promise<FormRendererEventResult>;
   prepareSave: (request: {
     intent: 'submit' | 'draft';
+    signal?: AbortSignal;
+    decision?: { reviewId: string; action: 'refresh' | 'retain' | 'cancel' };
     instancePath?: FormRendererDiagnosticInstancePath;
     scopeId?: string;
   }) => Promise<FormRendererSavePreparation>;
@@ -143,12 +188,12 @@ export type FormRendererEventController = {
 
 export type FormRendererEventOptions =
   | {
-      lifecycle: boolean;
+      lifecycle?: boolean;
       recordKind: 'new' | 'existing';
       fieldInteractions?: ('focus' | 'blur' | 'click')[];
     }
   | {
-      lifecycle?: false;
+      lifecycle: false;
       recordKind?: 'new' | 'existing';
       fieldInteractions?: ('focus' | 'blur' | 'click')[];
     };
@@ -185,6 +230,26 @@ export type Form0FieldRegistry = {
 };
 
 export type FormRendererProps = {
+  submissionOptions?: {
+    mode?: 'automatic' | 'confirm';
+    allowRetain?: boolean;
+    messages?: Partial<
+      Record<
+        | 'title'
+        | 'refresh'
+        | 'retain'
+        | 'cancel'
+        | 'previous'
+        | 'next'
+        | 'pending'
+        | 'explanation'
+        | 'childCalculations'
+        | 'totalChanges',
+        string
+      >
+    >;
+  };
+  initialFreshness?: FormRendererFreshness | null;
   schema: Record<string, any>;
   initialValues?: Record<string, any>;
   initialSnapshot?: FormRendererSnapshot;
@@ -197,6 +262,8 @@ export type FormRendererProps = {
   onSnapshotChange?: (snapshot: FormRendererSnapshot, meta: FormRendererSnapshotChangeMeta) => void;
   fieldKeyMode?: 'prefer-key' | 'data-name';
   mode?: 'edit' | 'readonly';
+  /** Opening mode for existing repeatable rows; new rows always start in edit mode. */
+  repeatableEntryMode?: 'edit' | 'readonly';
   keyboardScrollOffset?: number;
   debug?: boolean;
   onSchemaReady?: (schema: Record<string, any>) => void;

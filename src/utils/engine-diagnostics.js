@@ -134,11 +134,16 @@ export function createBindingDiagnosticScope({
 export function createDiagnosticEngine({ onWarning, ...options }) {
   const warningSystem = new WarningSystem();
   if (typeof onWarning === 'function') warningSystem.addWarningHandler(onWarning);
-  return createFormEngine({
+  const engine = createFormEngine({
     ...options,
     warningSystem,
     diagnostics: { console: false },
   });
+  if (typeof engine.getMode !== 'function' || typeof engine.setMode !== 'function')
+    throw new Error(
+      'This binding requires the coordinated form0-core release with engine mode control. Upgrade core before using this binding.'
+    );
+  return engine;
 }
 
 /** Complete paths use the same attribution shape as CLI preview. */

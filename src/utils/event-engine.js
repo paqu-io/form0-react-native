@@ -22,6 +22,7 @@ export function createEventEngineBinding({
     return copyEventData(reduceState(state));
   };
   return {
+    recordCoordinator: engine.recordCoordinator,
     endScope,
     scopeId: scope.scopeId,
     instancePath: copyEventData(scope.instancePath),
