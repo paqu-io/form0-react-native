@@ -63,6 +63,12 @@ export function useEngineDiagnostics(
             scope.isActive?.() ? optionsRef.current.onWarning?.(warning) : undefined,
           onDiagnostics: (snapshot) => scope.accept(snapshot),
         });
+        const setValues = engine.setValues;
+        engine.setValues = (updates) => {
+          const result = setValues(updates);
+          recordSource?.notify?.(engine);
+          return result;
+        };
         engineRef.current = engine;
         if (recordCoordinator) {
           if (!attributionRef.current.instancePath.length)

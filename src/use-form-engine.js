@@ -1,3 +1,4 @@
+import { normalizeUpdates, normalizeLoadedValue, scopeFields } from './utils/value-updates.js';
 import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
@@ -154,13 +155,25 @@ export function useFormEngine(
     rebuildEngine(initialValuesRef.current);
   }, [rebuildEngine, initialValuesSignature]);
 
-  const setValues = useCallback(
-    (updates = {}) => {
+  const updateFields = useMemo(() => scopeFields(preparedSchema), [preparedSchema]);
+  const applyValueUpdates = useCallback(
+    (updates, replacement = false) => {
       const engine = engineRef.current;
-      if (!engine || !updates || typeof updates !== 'object') return;
+      if (!engine) return;
+      const prepared = replacement
+        ? Object.fromEntries(
+            Object.entries(updates).map(([name, value]) => [
+              name,
+              normalizeLoadedValue(
+                fieldOwnership.get(name)?.field || updateFields.get(name),
+                value
+              ),
+            ])
+          )
+        : normalizeUpdates(updateFields, updates, modeRef.current);
       const stateRef = engine.getState();
       let dirty = false;
-      Object.entries(updates).forEach(([field, value]) => {
+      Object.entries(prepared).forEach(([field, value]) => {
         if (stateRef.values[field] !== value) {
           stateRef.values[field] = value;
           dirty = true;
@@ -171,8 +184,9 @@ export function useFormEngine(
         syncState();
       }
     },
-    [syncState]
+    [syncState, updateFields, fieldOwnership]
   );
+  const setValues = useCallback((updates) => applyValueUpdates(updates), [applyValueUpdates]);
 
   const defaultProcessOperations = useCallback(
     (operations = []) => {
@@ -190,15 +204,11 @@ export function useFormEngine(
         const { type, operation: operationName, params = {} } = operation;
         if (type === 'FIELD_OPERATION' && operationName === 'SETVALUE') {
           const { fieldDataName, valueToSet } = params || {};
-          if (typeof fieldDataName !== 'string' || fieldDataName.length === 0) {
-            console.warn(
-              'form0-react-native: SETVALUE operation missing fieldDataName.',
-              operation
-            );
-            return;
-          }
-          pendingValueUpdates[fieldDataName] = cloneDeep(
-            normalizeChoiceOperationValue(fieldOwnership.get(fieldDataName)?.field, valueToSet)
+          if (typeof fieldDataName !== 'string' || fieldDataName.length === 0)
+            throw new TypeError('SETVALUE requires a nonempty field data_name.');
+          pendingValueUpdates[fieldDataName] = normalizeChoiceOperationValue(
+            fieldOwnership.get(fieldDataName)?.field,
+            valueToSet
           );
           return;
         }
@@ -264,12 +274,13 @@ export function useFormEngine(
     if (!overrideValuesRef.current || !engineRef.current) {
       return;
     }
-    setValues(overrideValuesRef.current);
-  }, [overrideSignature, setValues]);
+    applyValueUpdates(overrideValuesRef.current, true);
+  }, [overrideSignature, applyValueUpdates]);
 
   const setValue = useCallback(
     (field, value) => {
-      if (!field) return;
+      if (typeof field !== 'string' || !field)
+        throw new TypeError('A field data_name is required.');
       setValues({ [field]: value });
     },
     [setValues]
