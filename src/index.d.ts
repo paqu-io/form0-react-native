@@ -230,6 +230,13 @@ export type Form0FieldRegistry = {
 };
 
 export type FormRendererProps = {
+  /** Console reporting only; independent of calculation diagnostics and lifecycle settings. */
+  submissionDiagnostics?: {
+    /** Report save/preparation failures; callback errors retain their original object. Defaults to true. */
+    saveFailures?: boolean;
+    /** Log blocked Submit and row Save attempts; defaults to false. */
+    validationBlocks?: boolean;
+  };
   submissionOptions?: {
     mode?: 'automatic' | 'confirm';
     allowRetain?: boolean;
