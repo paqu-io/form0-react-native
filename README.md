@@ -306,3 +306,16 @@ before host delegation. Guard editable-load setters or move writable initializat
 Validation/close phases retain stricter restrictions. These capabilities require the coordinated
 core release containing engine mode control and readonly scoped evaluation; no schema or record
 migration is introduced.
+
+## Programmatic value updates
+
+Official setters and default SETVALUE operation application share core normalization. SingleChoice
+and Boolean accept a string choice ID or `{ choice, other }`; MultiChoice accepts string IDs in an
+array or `{ choices, other }`. Full live objects preserve labels and metadata. Schema choices and
+submitted record formats remain unchanged. Updates do not implicitly dispatch form events.
+
+Malformed calls reject before applying a value batch. Input aliases and numeric/boolean choice-ID
+coercion are intentionally no longer supported. Calculated/display/container targets, cross-scope
+writes and setter/event writes in record readonly mode are rejected. Host restoration and
+authoritative overrides remain separate loading paths. See the
+[value-update contract](https://docs.form0.dev/core/engine/value-updates).

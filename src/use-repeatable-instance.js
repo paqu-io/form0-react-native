@@ -1,3 +1,4 @@
+import { normalizeUpdates } from './utils/value-updates.js';
 import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
@@ -94,7 +95,6 @@ export function useRepeatableInstanceEngine({
     if (!repInfo?.fields) return [];
     return Array.from(repInfo.fields.keys());
   }, [repInfo]);
-  const fieldNameSet = useMemo(() => new Set(fieldNames), [fieldNames]);
   const diagnosticGeneration = useMemo(
     () => ({}),
     [
@@ -227,24 +227,9 @@ export function useRepeatableInstanceEngine({
     rebuildEngine(valuesRef.current);
   }, [baseValuesSignature, rebuildEngine]);
 
-  const filterUpdates = useCallback(
-    (updates = {}) => {
-      if (!updates || typeof updates !== 'object') return {};
-      if (fieldNameSet.size === 0) return { ...updates };
-      const filtered = {};
-      Object.entries(updates).forEach(([key, value]) => {
-        if (fieldNameSet.has(key)) {
-          filtered[key] = value;
-        }
-      });
-      return filtered;
-    },
-    [fieldNameSet]
-  );
-
   const setValues = useCallback(
-    (updates = {}) => {
-      const filtered = filterUpdates(updates);
+    (updates) => {
+      const filtered = normalizeUpdates(repInfo?.fields, updates, modeRef.current);
       if (!engineRef.current || Object.keys(filtered).length === 0) return;
       const engineState = engineRef.current.getState();
       let dirty = false;
@@ -259,12 +244,13 @@ export function useRepeatableInstanceEngine({
         syncState(engineRef.current);
       }
     },
-    [filterUpdates, syncState]
+    [repInfo, syncState]
   );
 
   const setValue = useCallback(
     (field, value) => {
-      if (!field) return;
+      if (typeof field !== 'string' || !field)
+        throw new TypeError('A field data_name is required.');
       setValues({ [field]: value });
     },
     [setValues]
@@ -286,15 +272,11 @@ export function useRepeatableInstanceEngine({
         const { type, operation: operationName, params = {} } = operation;
         if (type === 'FIELD_OPERATION' && operationName === 'SETVALUE') {
           const { fieldDataName, valueToSet } = params || {};
-          if (typeof fieldDataName !== 'string' || fieldDataName.length === 0) {
-            console.warn(
-              'form0-react-native: SETVALUE operation missing fieldDataName.',
-              operation
-            );
-            return;
-          }
-          pendingValueUpdates[fieldDataName] = cloneDeep(
-            normalizeChoiceOperationValue(repInfo?.fields?.get(fieldDataName)?.field, valueToSet)
+          if (typeof fieldDataName !== 'string' || fieldDataName.length === 0)
+            throw new TypeError('SETVALUE requires a nonempty field data_name.');
+          pendingValueUpdates[fieldDataName] = normalizeChoiceOperationValue(
+            repInfo?.fields?.get(fieldDataName)?.field,
+            valueToSet
           );
           return;
         }
