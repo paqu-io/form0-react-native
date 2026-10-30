@@ -319,3 +319,34 @@ coercion are intentionally no longer supported. Calculated/display/container tar
 writes and setter/event writes in record readonly mode are rejected. Host restoration and
 authoritative overrides remain separate loading paths. See the
 [value-update contract](https://docs.form0.dev/core/engine/value-updates).
+
+## Save failures and submission logging
+
+Save failures are reported to `console.error` by default, with the failure stage and original
+error. Failed persistence callbacks keep edits available for retry and are not acknowledged as
+successful saves. Your application owns user-facing feedback: after catching a failed save to show
+a message, rethrow the error. A fulfilled callback counts as success.
+
+```jsx
+<FormRenderer
+  schema={schema}
+  engineOptions={{ events: { recordKind: "new" } }}
+  submissionDiagnostics={{ saveFailures: true, validationBlocks: false }}
+  onSubmit={saveRecord}
+/>
+```
+
+Set `saveFailures: false` if your application already reports failures. Set `validationBlocks: true`
+to log blocked Submit and repeatable-row Save attempts, such as an empty required field. Validation
+feedback remains visible with logging off. These preferences stay current without rebuilding the
+engine, including during a pending save; they are separate from `debug`, calculation diagnostics
+and lifecycle settings. Reports do not attach form values, snapshots or record paths. Preparation
+failures include issue codes/messages; cancelling a confirmation stays quiet. Exceptions from your
+callback, including a rejected cancellation, are reported as callback failures. Existing core
+event messages have their own behavior.
+
+The settings apply to built-in renderer actions. Applications using `prepareSave()` directly must
+inspect and report the returned result themselves.
+
+The same controls cover draft `onSave` failures. Invalid drafts remain saveable and successful
+draft saves do not produce validation-block messages.

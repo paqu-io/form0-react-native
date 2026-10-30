@@ -1,3 +1,4 @@
+import { createSubmissionReporter } from './utils/submission-diagnostics.js';
 import { createInstancePathLabeler } from './utils/submission-presentation.js';
 import { RecordCoordinatorProvider, RecordCoordinatorContext, consumeAppliedRecordTree } from './record-context.jsx';
 import { useSubmissionReview } from './use-submission-review.js';
@@ -753,6 +754,7 @@ function FormRendererContent({
   initialSnapshot,
   overrideValues,
   submissionOptions,
+  submissionDiagnostics,
   initialFreshness,
   onSubmit,
   onSave,
@@ -982,6 +984,12 @@ function FormRendererContent({
     [elements, resolveRepeatableKey, visible]
   );
 
+  const submissionDiagnosticsRef = useRef(submissionDiagnostics);
+  submissionDiagnosticsRef.current = submissionDiagnostics;
+  const submissionReporter = useMemo(
+    () => createSubmissionReporter('form0-react-native', () => submissionDiagnosticsRef.current),
+    []
+  );
   // Drilldown navigation state
   const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
 
@@ -2301,18 +2309,24 @@ function FormRendererContent({
     if (rootEvents.record || rootEvents.lifecycle) {
       if (managedSaveBusyRef.current) return;
       managedSaveBusyRef.current = true;
+      let stage = 'preparation';
       try {
         const prepared = await submissionReview.prepare('submit');
+        submissionReporter.result('Submit', stage, prepared);
         if (!prepared.eligible || !onSubmit) {
           if (prepared.validationSummary?.hasErrors)
             navigateToRootValidationIssue(getFirstValidationIssue(prepared.validationSummary));
           return;
         }
+        stage = 'onSubmit';
         await onSubmit(prepared.payload, prepared.meta);
-        rootEvents.controller?.acknowledgeSave({
+        stage = 'acknowledgement';
+        const acknowledged = rootEvents.controller?.acknowledgeSave({
           preparationId: prepared.preparationId,
         });
-      } catch {
+        submissionReporter.result('Submit', stage, acknowledged);
+      } catch (error) {
+        submissionReporter.failure('Submit', stage, error);
         recordCoordinator?.cancelPreparation();
         /* Keep the editor available for retry. */
       } finally {
@@ -2323,6 +2337,7 @@ function FormRendererContent({
     const validationSummary = rootValidationSummary;
     if (validationSummary?.hasErrors || !onSubmit) {
       if (validationSummary?.hasErrors) {
+        submissionReporter.blocked('Submit');
         navigateToRootValidationIssue(getFirstValidationIssue(validationSummary));
       }
       return;
@@ -2340,12 +2355,16 @@ function FormRendererContent({
       timestamps: timestampSnapshot,
     });
 
-    onSubmit(submission.structuredRecord, {
-      repeatable: submission.repeatable,
-      rawValues: submission.rawValues,
-      validationSummary,
-      timestamps: submission.timestamps,
-    });
+    try {
+      await onSubmit(submission.structuredRecord, {
+        repeatable: submission.repeatable,
+        rawValues: submission.rawValues,
+        validationSummary,
+        timestamps: submission.timestamps,
+      });
+    } catch (error) {
+      submissionReporter.failure('Submit', 'onSubmit', error);
+    }
   }, [
     fieldKeyMode,
     finalSchema,
@@ -2361,6 +2380,7 @@ function FormRendererContent({
     submit,
     timestampsRef,
     touchUpdatedAt,
+    submissionReporter,
   ]);
 
   const handleFormSave = useCallback(async () => {
@@ -2372,15 +2392,21 @@ function FormRendererContent({
     if (rootEvents.record || rootEvents.lifecycle) {
       if (managedSaveBusyRef.current) return;
       managedSaveBusyRef.current = true;
+      let stage = 'preparation';
       try {
         const prepared = await submissionReview.prepare('draft');
+        submissionReporter.result('Draft save', stage, prepared);
         if (prepared.eligible) {
+          stage = 'onSave';
           await onSave(prepared.payload, prepared.meta);
-          rootEvents.controller?.acknowledgeSave({
+          stage = 'acknowledgement';
+          const acknowledged = rootEvents.controller?.acknowledgeSave({
             preparationId: prepared.preparationId,
           });
+          submissionReporter.result('Draft save', stage, acknowledged);
         }
-      } catch {
+      } catch (error) {
+        submissionReporter.failure('Draft save', stage, error);
         recordCoordinator?.cancelPreparation();
         /* Persistence remains application-owned. */
       } finally {
@@ -2402,10 +2428,14 @@ function FormRendererContent({
       timestamps: timestampSnapshot,
     };
 
-    onSave(nextSnapshot, {
-      validationSummary: rootValidationSummary,
-      dirty: hasChanges,
-    });
+    try {
+      await onSave(nextSnapshot, {
+        validationSummary: rootValidationSummary,
+        dirty: hasChanges,
+      });
+    } catch (error) {
+      submissionReporter.failure('Draft save', 'onSave', error);
+    }
   }, [
     hasChanges,
     rootEvents.lifecycle,
@@ -2415,6 +2445,7 @@ function FormRendererContent({
     recordCoordinator,
     submissionReview.prepare,
     onSave,
+    submissionReporter,
     rootValidationSummary,
     statusFieldName,
     statusValue,
@@ -2663,6 +2694,7 @@ function FormRendererContent({
               schema={finalSchema}
               onBack={popRepeatableScreen}
               onSave={handleRepeatableSave}
+              submissionReporter={submissionReporter}
               renderElements={renderElements}
               labelPosition={labelPosition}
               labelWidthPercent={labelWidthPercent}
@@ -3393,6 +3425,7 @@ function RepeatableEditorScreen({
   schema,
   onBack,
   onSave,
+  submissionReporter,
   renderElements,
   labelPosition,
   labelWidthPercent,
@@ -3827,16 +3860,26 @@ function RepeatableEditorScreen({
     if (rowEvents.record || rowEvents.lifecycle) {
       setSubmitCount((count) => count + 1);
       const closeTarget = rowEvents.captureClose();
-      const prepared = await rowEvents.prepare('submit');
-      if (prepared.eligible) await onSave(screen, prepared.payload, closeTarget);
-      else if (prepared.validationSummary?.hasErrors)
-        navigateToValidationIssue(getFirstValidationIssue(prepared.validationSummary));
+      let stage = 'preparation';
+      try {
+        const prepared = await rowEvents.prepare('submit');
+        submissionReporter.result('Row save', stage, prepared);
+        if (prepared.eligible) {
+          stage = 'row acceptance';
+          await onSave(screen, prepared.payload, closeTarget);
+        } else if (prepared.validationSummary?.hasErrors) {
+          navigateToValidationIssue(getFirstValidationIssue(prepared.validationSummary));
+        }
+      } catch (error) {
+        submissionReporter.failure('Row save', stage, error);
+      }
       return;
     }
     if (validateBeforeSave) {
       setSubmitCount((count) => count + 1);
       const validationSummary = entryValidationSummary;
       if (validationSummary.hasErrors) {
+        submissionReporter.blocked('Row save');
         navigateToValidationIssue(getFirstValidationIssue(validationSummary));
         return;
       }
