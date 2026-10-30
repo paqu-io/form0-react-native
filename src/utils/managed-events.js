@@ -172,7 +172,7 @@ export async function completeEventOperations(
   }
 }
 
-export function createEventSession(configuration = {}) {
+export function createEventSession(configuration = {}, onFailure) {
   const config = normalizeEventOptions(configuration);
   const scopes = new Map();
   let generation = 0;
@@ -207,7 +207,25 @@ export function createEventSession(configuration = {}) {
     tail = next.catch(() => {});
     return next;
   }
-  async function execute(scope, type, fieldKey, metadata = {}) {
+  function report(result, scope, type, fieldKey) {
+    if (result?.status === 'failed' && current(scope)) {
+      try {
+        onFailure?.(result, {
+          eventType: type,
+          fieldKey,
+          scope: scope.instancePath.length ? 'row' : 'root',
+        });
+      } catch {
+        /* Diagnostic observers cannot change dispatch results. */
+      }
+    }
+    return result;
+  }
+  async function execute(scope, type, fieldKey, metadata = {}, reportFailure = true) {
+    const result = await executeUnreported(scope, type, fieldKey, metadata);
+    return reportFailure ? report(result, scope, type, fieldKey) : result;
+  }
+  async function executeUnreported(scope, type, fieldKey, metadata = {}) {
     if (!current(scope)) return failure('scope_closed', 'The target editor has ended.', scope);
     try {
       await scope.adapter.settle();
@@ -307,6 +325,7 @@ export function createEventSession(configuration = {}) {
         signature: scope.adapter.dataSignature(),
       };
     const intrinsic = scoped?.validationSummary || scope.adapter.validate(state);
+    // Save preparation has its own reporter; do not report its event failures twice.
     const detail = config.lifecycle
       ? await execute(
           scope,
@@ -315,7 +334,8 @@ export function createEventSession(configuration = {}) {
           {
             isDraft,
             isValid: !intrinsic.hasErrors,
-          }
+          },
+          false
         )
       : {
           status: 'completed',
@@ -343,10 +363,16 @@ export function createEventSession(configuration = {}) {
           {
             managedEvents: config.lifecycle,
             saveHook: (summary) =>
-              execute(scope, 'save-record', scope.fieldKey, {
-                isDraft: draft,
-                isValid: !summary.hasErrors,
-              }),
+              execute(
+                scope,
+                'save-record',
+                scope.fieldKey,
+                {
+                  isDraft: draft,
+                  isValid: !summary.hasErrors,
+                },
+                false
+              ),
             serialize: (snapshot, selectedIntent, summary, scheduling) =>
               scope.adapter.serialize(snapshot, selectedIntent, summary, scheduling),
           }
@@ -372,7 +398,8 @@ export function createEventSession(configuration = {}) {
             {
               isDraft: draft,
               isValid: !scope.adapter.validate(validation.state).hasErrors,
-            }
+            },
+            false
           )
         : {
             status: 'completed',
@@ -545,10 +572,11 @@ export function createEventSession(configuration = {}) {
             try {
               await update();
             } catch (error) {
-              return failure(
-                'value_update_failed',
-                error?.message || 'Value update failed.',
-                scope
+              return report(
+                failure('value_update_failed', error?.message || 'Value update failed.', scope),
+                scope,
+                type,
+                targetField
               );
             }
             return execute(scope, type, targetField, metadata);

@@ -1,3 +1,4 @@
+import { createEventFailureReporter } from './utils/event-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createEventSession,
@@ -15,8 +16,17 @@ function notify(observer, value) {
 }
 
 /** Configuration belongs to an editor session; callbacks remain live. */
-export function useEventSession(options, generation) {
-  const session = useMemo(() => createEventSession(options?.events), [generation]);
+export function useEventSession(options, generation, eventDiagnostics) {
+  const diagnosticsRef = useRef(eventDiagnostics);
+  diagnosticsRef.current = eventDiagnostics;
+  const session = useMemo(
+    () =>
+      createEventSession(
+        options?.events,
+        createEventFailureReporter('form0-react-native', () => diagnosticsRef.current)
+      ),
+    [generation]
+  );
   const controllerRef = useRef(null);
   const observerRef = useRef(null);
   const announce = useCallback(

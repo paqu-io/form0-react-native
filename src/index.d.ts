@@ -230,6 +230,8 @@ export type Form0FieldRegistry = {
 };
 
 export type FormRendererProps = {
+  /** Managed event failures are reported by default; does not change validation or evaluation. */
+  eventDiagnostics?: { failures?: boolean };
   /** Console reporting only; independent of calculation diagnostics and lifecycle settings. */
   submissionDiagnostics?: {
     /** Report save/preparation failures; callback errors retain their original object. Defaults to true. */

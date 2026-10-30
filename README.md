@@ -330,7 +330,7 @@ a message, rethrow the error. A fulfilled callback counts as success.
 ```jsx
 <FormRenderer
   schema={schema}
-  engineOptions={{ events: { recordKind: "new" } }}
+  engineOptions={{ events: { recordKind: 'new' } }}
   submissionDiagnostics={{ saveFailures: true, validationBlocks: false }}
   onSubmit={saveRecord}
 />
@@ -350,3 +350,33 @@ inspect and report the returned result themselves.
 
 The same controls cover draft `onSave` failures. Invalid drafts remain saveable and successful
 draft saves do not produce validation-block messages.
+
+## Managed event failure reporting
+
+`eventDiagnostics` controls managed event failure reporting separately from `submissionDiagnostics`:
+
+```jsx
+<FormRenderer
+  schema={schema}
+  engineOptions={{ events: { recordKind: 'existing' } }}
+  eventDiagnostics={{ failures: true }}
+  submissionDiagnostics={{ saveFailures: true, validationBlocks: false }}
+/>
+```
+
+Failed managed events report once to `console.error` by default, including rejected `SETVALUE()`
+operations and rejected `onOperations` promises. Reports contain the event type, triggering field,
+root/row scope and issue codes/messages, without attaching values, operation arguments, snapshots or
+record IDs. Set `failures: false` when your application handles these reports. The preference stays
+current in open editors and pending operations without rebuilding or evaluating the engine.
+
+Normal field validation and `INVALID()` findings remain separate. Cancelled or retired work stays
+quiet. Built-in Submit and row Save preparation use the submission reporter instead of emitting a
+second event report. Hosts calling `prepareSave()` directly still inspect its returned result.
+`dispatch()` continues returning its structured result even when console reporting is disabled.
+Existing core warnings and legacy `lifecycle: false` console behavior are unchanged.
+
+Numeric fields still accept numbers: `SETVALUE("quantity", 1)` is valid. Choice fields require string
+IDs: `SETVALUE("rating", "1")` for single selection and `SETVALUE("tags", ["1"])` for multiple
+selection. A rejected call leaves its operation batch unapplied; reporting does not change values,
+validation, submitted records or evaluation counts.

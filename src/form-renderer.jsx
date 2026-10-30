@@ -755,6 +755,7 @@ function FormRendererContent({
   overrideValues,
   submissionOptions,
   submissionDiagnostics,
+  eventDiagnostics,
   initialFreshness,
   onSubmit,
   onSave,
@@ -831,7 +832,8 @@ function FormRendererContent({
   );
   const { session: eventSession, announce: announceEventController } = useEventSession(
     engineOptions,
-    schema
+    schema,
+    eventDiagnostics
   );
   const eventDispatchRef = useRef(null);
   const managedSaveBusyRef = useRef(false);
