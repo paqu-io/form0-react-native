@@ -671,3 +671,58 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
     }
   );
 }
+
+export function runNativeRuntimeRetentionTests(FormRenderer, field, repeatable, security) {
+  it(`Native clears closed rows without collection calculations (${security?.mode || 'trusted'})`, async () => {
+    let controller;
+    const snapshots = vi.fn();
+    const schema = {
+      form: {
+        name: 'Retention',
+        elements: [
+          field('NumericField', 'show_rows'),
+          {
+            ...repeatable('rows', [
+              field('TextField', 'secret', { visible_preserve_value: false }),
+            ]),
+            visible: false,
+            visible_conditions: {
+              field_id: 'show_rows',
+              operator: 'equal_to',
+              value: 1,
+            },
+          },
+        ],
+      },
+    };
+    render(
+      <FormRenderer
+        schema={schema}
+        initialSnapshot={{
+          raw_values: { show_rows: 1 },
+          repeatable: { rows: [{ id: 0, values: { secret: 'secret' } }] },
+        }}
+        engineOptions={{
+          security,
+          events: { lifecycle: false },
+          onEventController: (next) => {
+            controller = next;
+          },
+        }}
+        onSnapshotChange={snapshots}
+      />
+    );
+    const input = await screen.findByDisplayValue('1');
+    await waitFor(() => expect(controller).toBeTruthy());
+    fireEvent.change(input, { target: { value: '0' } });
+    await waitFor(() =>
+      expect(snapshots.mock.calls.at(-1)[0].repeatable.rows[0].values.secret).toBeNull()
+    );
+    let result;
+    await act(async () => {
+      result = await controller.prepareSave({ intent: 'submit' });
+    });
+    expect(result.eligible).toBe(true);
+    expect(result.payload.form_values.rows[0].form_values.secret).toBeNull();
+  });
+}

@@ -2,13 +2,8 @@ import React from 'react';
 import { useTheme } from '../theme-context.jsx';
 import { TextInput } from '../typography.jsx';
 
-const normalizeDateValue = (raw) => {
-  if (!raw || typeof raw !== 'string') return '';
-  if (raw.includes('T')) {
-    return raw.split('T')[0];
-  }
-  return raw;
-};
+// Do not hide invalid loaded values or incomplete user input through display conversion.
+const normalizeDateValue = (raw) => (typeof raw === 'string' ? raw : '');
 
 export function DateFieldComponent({ value, onChange, onKeyDown, readOnly, inputProps = {} }) {
   const { theme } = useTheme();

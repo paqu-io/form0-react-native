@@ -2,16 +2,8 @@ import React from 'react';
 import { useTheme } from '../theme-context.jsx';
 import { TextInput } from '../typography.jsx';
 
-const normalizeTimeValue = (raw) => {
-  if (!raw || typeof raw !== 'string') return '';
-  const match = raw.match(/^\d{2}:\d{2}(?::\d{2})?$/);
-  if (!match) return '';
-  const time = match[0];
-  if (time.length === 5) {
-    return `${time}:00`;
-  }
-  return time;
-};
+// Keep partial or invalid typed values visible so the user can finish or correct them.
+const normalizeTimeValue = (raw) => (typeof raw === 'string' ? raw : '');
 
 export function TimeFieldComponent({ value, onChange, onKeyDown, readOnly, inputProps = {} }) {
   const { theme } = useTheme();
@@ -25,8 +17,7 @@ export function TimeFieldComponent({ value, onChange, onKeyDown, readOnly, input
       onChange(null);
       return;
     }
-    const withSeconds = text.length === 5 ? `${text}:00` : text;
-    onChange(withSeconds);
+    onChange(text);
   };
 
   return (
