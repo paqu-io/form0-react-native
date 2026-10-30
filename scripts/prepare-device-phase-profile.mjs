@@ -73,11 +73,18 @@ export function instrumentRecordEvaluator(source) {
     `        executionIssues.push(...detail.issues);
         __endDispatch();`
   );
+  const summaries = [
+    ...source.matchAll(
+      /    const validationSummary = validateSubmissionWithContext\(\s*result\.snapshot,\s*context,\s*custom(?:,\s*options)?\s*\);/g
+    ),
+  ];
+  if (summaries.length !== 1)
+    throw new Error('Diagnostic source anchor changed: submission summary');
   replace(
-    '    const validationSummary = validateSubmissionWithContext(result.snapshot, context, custom);',
+    summaries[0][0],
     `    __endManaged();
     const __endSummary = __phase('submissionSummary');
-    const validationSummary = validateSubmissionWithContext(result.snapshot, context, custom);
+${summaries[0][0]}
     __endSummary();`
   );
   replace(

@@ -3,6 +3,7 @@ import { eventDataSignature } from './utils/managed-events.js';
 import {
   createRecordCoordinator,
   applyRecordState,
+  applyClearedFieldUpdates,
   createEditorSignature,
 } from './utils/record-coordinator.js';
 
@@ -89,12 +90,28 @@ export function attachRecordEngine(engine, coordinator, path, source, report) {
   engine.eval = () => {
     const version = ++sequence;
     coordinator.changed();
+    const capturedRepeatable = source?.repeatable?.();
     pending = coordinator.evaluate(path, { interactionMode: engine.getMode() }).then((result) => {
-      if (!active || version !== sequence) return;
+      if (
+        !active ||
+        version !== sequence ||
+        (result.clearedFields?.length && source?.repeatable?.() !== capturedRepeatable)
+      )
+        return;
       if (result.status !== 'evaluated') {
         throw new Error(result.issues?.[0]?.message || 'Record scope evaluation failed.');
       }
-      applyRecordState(engine, result.state);
+      const before = source?.repeatable?.() || {};
+      const updated = applyClearedFieldUpdates(
+        { ...result.state, repeatable: before },
+        result.clearedFields,
+        path
+      );
+      applyRecordState(engine, updated);
+      if (updated.repeatable !== before) {
+        appliedTrees.set(engine, updated.repeatable);
+        source?.setRepeatable?.(updated.repeatable);
+      }
       report(result.diagnostics || []);
       source?.notify?.(engine);
     });
@@ -129,6 +146,15 @@ export function attachRecordWorker(client, coordinator, path, source = {}) {
     acknowledged: source.acknowledged,
   });
   client.recordCoordinator = coordinator;
+  client.getRetentionContext = () => source.repeatable?.();
+  client.onRetentionClears = (fields) => {
+    const before = read();
+    const updated = applyClearedFieldUpdates(before, fields, path);
+    if (updated.repeatable !== before.repeatable) {
+      appliedTrees.set(client, updated.repeatable);
+      source.setRepeatable?.(updated.repeatable);
+    }
+  };
   const terminate = client.terminate.bind(client);
   client.terminate = () => {
     release();

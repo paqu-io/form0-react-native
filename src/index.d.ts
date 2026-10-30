@@ -242,6 +242,7 @@ export type FormRendererProps = {
   submissionOptions?: {
     mode?: 'automatic' | 'confirm';
     allowRetain?: boolean;
+    validateHiddenValues?: boolean;
     messages?: Partial<
       Record<
         | 'title'
