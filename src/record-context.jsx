@@ -76,6 +76,7 @@ export function attachRecordEngine(engine, coordinator, path, source, report) {
   };
   const release = coordinator.bind(path, {
     read,
+    canEdit: () => engine.getMode() !== 'readonly',
     signature: createEditorSignature(read),
     apply,
     acknowledged: () => source?.acknowledged?.(),

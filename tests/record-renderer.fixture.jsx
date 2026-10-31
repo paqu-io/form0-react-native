@@ -673,6 +673,76 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
 }
 
 export function runNativeRuntimeRetentionTests(FormRenderer, field, repeatable, security) {
+  for (const recovery of [false, true])
+    it(`Native saves an empty added row independently of recovery=${recovery} (${security?.mode || 'trusted'})`, async () => {
+      const saved = vi.fn();
+      const resolve = vi.fn();
+      render(
+        <FormRenderer
+          schema={{
+            form: {
+              name: 'Order',
+              elements: [
+                repeatable('items', [
+                  field('TextField', 'product'),
+                  field('NumericField', 'quantity'),
+                ]),
+              ],
+            },
+          }}
+          engineOptions={{ security, events: { lifecycle: false } }}
+          onResolveHiddenValue={recovery ? resolve : undefined}
+          onSubmit={saved}
+        />
+      );
+      fireEvent.click(await screen.findByText('items'));
+      fireEvent.click(screen.getByRole('button', { name: 'View', exact: true }));
+      fireEvent.click(screen.getByText('+ Add'));
+      fireEvent.click(await screen.findByText('Save'));
+      await screen.findByText('items 1');
+      fireEvent.click(screen.getByRole('button', { name: 'Back', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true }));
+      await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+      const rows = saved.mock.calls[0][0].form_values.items;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toEqual(expect.any(String));
+      expect(rows[0].form_values).toEqual({ product: null, quantity: null });
+      expect(resolve).not.toHaveBeenCalled();
+    });
+  it(`Native offers application-controlled hidden-value recovery (${security?.mode || 'trusted'})`, async () => {
+    const resolve = vi.fn(async () => ({ value: null }));
+    const snapshots = vi.fn();
+    const saved = vi.fn();
+    render(
+      <FormRenderer
+        schema={{
+          form: {
+            name: 'Recovery',
+            elements: [field('TextField', 'hidden', { visible: false })],
+          },
+        }}
+        initialValues={{ hidden: 9 }}
+        submissionOptions={{ validateHiddenValues: true }}
+        engineOptions={{ security, events: { lifecycle: false } }}
+        onResolveHiddenValue={resolve}
+        onSnapshotChange={snapshots}
+        onSubmit={saved}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Recovery' }));
+    fireEvent.click((await screen.findByText(/Resolve hidden value/)).closest('button'));
+    await waitFor(() => expect(snapshots.mock.calls.at(-1)[0].raw_values.hidden).toBeNull());
+    expect(resolve.mock.calls[0][0]).toMatchObject({
+      fieldName: 'hidden',
+      value: 9,
+      hidden: true,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+    expect(saved.mock.calls[0][0].form_values.hidden).toBeNull();
+  });
   it(`Native clears closed rows without collection calculations (${security?.mode || 'trusted'})`, async () => {
     let controller;
     const snapshots = vi.fn();

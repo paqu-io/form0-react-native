@@ -229,7 +229,25 @@ export type Form0FieldRegistry = {
   getMissingFieldComponentTypes: () => string[];
 };
 
+export type HiddenValueFinding = {
+  fieldName: string;
+  fieldKey?: string;
+  instancePath: Array<{
+    repeatableKey: string;
+    instanceId: string | number | null;
+    index: number;
+    identity: 'id' | 'position';
+  }>;
+  message: string;
+  hidden: true;
+  value: unknown;
+};
+
 export type FormRendererProps = {
+  /** Host-approved repair/clear; null/undefined cancels. No automatic persistence or revealing. */
+  onResolveHiddenValue?: (
+    finding: HiddenValueFinding
+  ) => { value: unknown } | null | undefined | Promise<{ value: unknown } | null | undefined>;
   /** Managed event failures are reported by default; does not change validation or evaluation. */
   eventDiagnostics?: { failures?: boolean };
   /** Console reporting only; independent of calculation diagnostics and lifecycle settings. */

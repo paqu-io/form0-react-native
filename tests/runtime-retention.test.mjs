@@ -7,6 +7,75 @@ import {
 import { buildStructuredSubmission } from '../src/utils/submission.js';
 import { field, repeatable } from './fixtures/diagnostic-conformance.js';
 
+test('Native host recovery handles cancellation, stale replies and closed-row clearing', async () => {
+  const schema = {
+    form: {
+      name: 'Recovery',
+      elements: [
+        field('TextField', 'shown'),
+        repeatable('rows', [field('TextField', 'hidden', { visible: false })]),
+      ],
+    },
+  };
+  let snapshot = {
+    values: { shown: 'keep' },
+    repeatable: { rows: [{ id: 0, values: { hidden: 8 } }] },
+  };
+  const coordinator = createRecordCoordinator({ schema });
+  const release = coordinator.bind([], {
+    read: () => snapshot,
+    apply: (next) => {
+      snapshot = next;
+    },
+    canEdit: () => true,
+  });
+  const finding = {
+    fieldName: 'hidden',
+    instancePath: [{ repeatableKey: 'rows', instanceId: 0, index: 0, identity: 'id' }],
+  };
+  try {
+    assert.equal(
+      (await coordinator.resolveHiddenValue(finding, async () => undefined)).status,
+      'cancelled'
+    );
+    assert.equal(snapshot.repeatable.rows[0].values.hidden, 8);
+    await assert.rejects(
+      () =>
+        coordinator.resolveHiddenValue(finding, async () => {
+          snapshot = { ...snapshot, values: { shown: 'changed' } };
+          return { value: null };
+        }),
+      /record changed/
+    );
+    assert.equal(snapshot.repeatable.rows[0].values.hidden, 8);
+    let closeChild;
+    try {
+      await assert.rejects(
+        () =>
+          coordinator.resolveHiddenValue(finding, async () => {
+            closeChild = coordinator.bind(finding.instancePath, {
+              read: () => snapshot.repeatable.rows[0],
+            });
+            return { value: null };
+          }),
+        /record changed/
+      );
+      assert.equal(snapshot.repeatable.rows[0].values.hidden, 8);
+    } finally {
+      closeChild?.();
+    }
+    await coordinator.resolveHiddenValue(finding, async (current) => {
+      assert.equal(current.value, 8);
+      return { value: null };
+    });
+    assert.equal(snapshot.repeatable.rows[0].values.hidden, null);
+    assert.equal(snapshot.values.shown, 'changed');
+  } finally {
+    release();
+    coordinator.dispose();
+  }
+});
+
 for (const security of [undefined, { mode: 'safe' }])
   test(`Native retention and strict option (${security?.mode || 'trusted'})`, async () => {
     const schema = {

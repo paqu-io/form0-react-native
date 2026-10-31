@@ -94,15 +94,13 @@ ${summaries[0][0]}
         {
           ...prepared,`
   );
+  const deliveryBoundary = source.includes('  async function hiddenValueTarget(')
+    ? '  async function hiddenValueTarget(snapshot, options) {'
+    : '  return { evaluate, evaluateScope, prepareSubmission };';
+  const deliveryTail = `      return result;\n    } catch (error) {\n      return failure(error);\n    }\n  }\n${deliveryBoundary}`;
   replace(
-    '      return result;\n    } catch (error) {\n      return failure(error);\n    }\n  }\n  return { evaluate, evaluateScope, prepareSubmission };',
-    `      __endDelivery();
-      return result;
-    } catch (error) {
-      return failure(error);
-    }
-  }
-  return { evaluate, evaluateScope, prepareSubmission };`
+    deliveryTail,
+    deliveryTail.replace('      return result;', '      __endDelivery();\n      return result;')
   );
   return '// DIAGNOSTIC ONLY: phase boundaries; never a publishable candidate.\n' + source;
 }

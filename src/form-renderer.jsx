@@ -446,7 +446,8 @@ function buildNavigationIssues(
   summary,
   sectionMetadata = {},
   fieldToSectionPath = {},
-  pathLabeler
+  pathLabeler,
+  resolveHiddenValue
 ) {
   if (!summary?.hasErrors) {
     return [];
@@ -471,6 +472,8 @@ function buildNavigationIssues(
     return {
       id: `${fieldName || 'issue'}-${index}`,
       fieldName,
+      hidden: issue?.hidden === true,
+      resolve: resolveHiddenValue,
       label: issue?.field?.label || fieldName || `Issue ${index + 1}`,
       message: issue?.message || issue?.errorMessage || 'Validation issue',
       instancePath: issue?.instancePath || [],
@@ -758,6 +761,7 @@ function FormRendererContent({
   eventDiagnostics,
   initialFreshness,
   onSubmit,
+  onResolveHiddenValue,
   onSave,
   onSnapshotChange,
   forceShowNavigationPanel = false,
@@ -1226,6 +1230,7 @@ function FormRendererContent({
   const navigateToRootValidationIssue = useCallback(
     (issue) => {
       const raw = issue?.issue || issue;
+      if (raw?.hidden) return;
       if (raw?.instancePath?.length) {
         validationNavigateRef.current?.(raw);
         return;
@@ -1377,9 +1382,19 @@ function FormRendererContent({
         rootValidationSummary,
         sectionMetadata,
         fieldToSectionPath,
-        createInstancePathLabeler(finalSchema, recordCoordinator?.capture())
+        createInstancePathLabeler(finalSchema, recordCoordinator?.capture()),
+        interactionMode === 'edit' && typeof onResolveHiddenValue === 'function'
+          ? (finding) => recordCoordinator.resolveHiddenValue(finding, onResolveHiddenValue)
+          : undefined
       ),
-    [fieldToSectionPath, rootValidationSummary, sectionMetadata]
+    [
+      fieldToSectionPath,
+      rootValidationSummary,
+      sectionMetadata,
+      interactionMode,
+      onResolveHiddenValue,
+      recordCoordinator,
+    ]
   );
   const rootNavigationPanelAvailable =
     forceShowNavigationPanel || hasSectionNodes(sectionTree) || showRootValidationList;
@@ -2962,6 +2977,8 @@ function FormNavigationSheet({
   const { theme } = useTheme();
   const hasSections = hasSectionNodes(sections);
   const hasIssues = Array.isArray(issues) && issues.length > 0;
+  const [resolving, setResolving] = useState(false);
+  const [recoveryError, setRecoveryError] = useState(null);
   const [activeTab, setActiveTab] = useState(hasSections ? 'sections' : 'issues');
   const [issueOffset, setIssueOffset] = useState(0);
   useEffect(() => setIssueOffset(0), [issues]);
@@ -3137,6 +3154,11 @@ function FormNavigationSheet({
             }}
             keyboardShouldPersistTaps="handled"
           >
+            {recoveryError ? (
+              <Text accessibilityRole="alert" style={{ color: theme.color.error }}>
+                {recoveryError}
+              </Text>
+            ) : null}
             {activeTab === 'issues' ? (
               validationEnabled ? (
                 hasIssues ? (
@@ -3144,7 +3166,22 @@ function FormNavigationSheet({
                     {issues.slice(issueOffset, issueOffset + 50).map((issue) => (
                       <Pressable
                         key={issue.id}
-                        onPress={() => onSelectIssue?.(issue)}
+                        disabled={resolving || (issue.hidden && !issue.resolve)}
+                        onPress={async () => {
+                          if (!issue.hidden) {
+                            onSelectIssue?.(issue);
+                            return;
+                          }
+                          setResolving(true);
+                          setRecoveryError(null);
+                          try {
+                            await issue.resolve(issue.issue);
+                          } catch (error) {
+                            setRecoveryError(error.message || 'The value could not be resolved.');
+                          } finally {
+                            setResolving(false);
+                          }
+                        }}
                         style={({ pressed }) => ({
                           borderWidth: 1,
                           borderColor: theme.color.border,
@@ -3172,6 +3209,13 @@ function FormNavigationSheet({
                         >
                           {issue.message}
                         </Text>
+                        {issue.hidden ? (
+                          <Text style={{ color: theme.color.description }}>
+                            This value is hidden. Make the field visible to correct it, or ask the
+                            application to resolve it.
+                            {issue.resolve ? ' Resolve hidden value.' : ''}
+                          </Text>
+                        ) : null}
                         {issue.sectionLabel ? (
                           <Text
                             style={{
