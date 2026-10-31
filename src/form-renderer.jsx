@@ -2,6 +2,7 @@ import { createSubmissionReporter } from './utils/submission-diagnostics.js';
 import { createInstancePathLabeler } from './utils/submission-presentation.js';
 import { RecordCoordinatorProvider, RecordCoordinatorContext, consumeAppliedRecordTree } from './record-context.jsx';
 import { useSubmissionReview } from './use-submission-review.js';
+import { useValidationNavigation } from './use-validation-navigation.js';
 import { SubmissionReview, submissionMessages } from './submission-review.jsx';
 import { useContext } from 'react';
 import { useEventSession, useManagedEventScope } from './use-managed-events.js';
@@ -1396,8 +1397,12 @@ function FormRendererContent({
       recordCoordinator,
     ]
   );
+  const keepRootValidationNavigation = useValidationNavigation(
+    submitCount,
+    rootValidationSummary?.hasErrors
+  );
   const rootNavigationPanelAvailable =
-    forceShowNavigationPanel || hasSectionNodes(sectionTree) || submitCount > 0;
+    forceShowNavigationPanel || hasSectionNodes(sectionTree) || keepRootValidationNavigation;
 
   const handleRootFieldValueChange = useCallback(
     (fieldDef, nextValue, applyValue = setValue) => {
@@ -3898,8 +3903,12 @@ function RepeatableEditorScreen({
       ),
     [editorFieldToSectionPath, editorSectionMetadata, entryValidationSummary]
   );
+  const keepEntryValidationNavigation = useValidationNavigation(
+    submitCount,
+    entryValidationSummary?.hasErrors
+  );
   const canOpenNavigationSheet =
-    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || submitCount > 0;
+    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || keepEntryValidationNavigation;
 
   const handleSave = async () => {
     if (readOnly) return;

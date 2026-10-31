@@ -673,6 +673,21 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
 }
 
 export function runNativeRuntimeRetentionTests(FormRenderer, field, repeatable, security) {
+  it(`Native keeps navigation unavailable after a valid sectionless submit (${security?.mode || 'trusted'})`, async () => {
+    const saved = vi.fn();
+    render(
+      <FormRenderer
+        schema={{ form: { name: 'Valid form', elements: [field('TextField', 'answer')] } }}
+        initialValues={{ answer: 'Valid' }}
+        engineOptions={{ security, events: { lifecycle: false } }}
+        onSubmit={saved}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Valid form', exact: true })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true }));
+    await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('button', { name: 'Valid form', exact: true })).toBeNull();
+  });
   it(`Native keeps row validation navigation after correcting the last error (${security?.mode || 'trusted'})`, async () => {
     render(
       <FormRenderer
@@ -697,6 +712,11 @@ export function runNativeRuntimeRetentionTests(FormRenderer, field, repeatable, 
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     fireEvent.click(screen.getByRole('button', { name: 'items 1', exact: true }));
     expect(await screen.findByText('No validation issues.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    await screen.findByText('items 1');
+    fireEvent.click(screen.getByText('+ Add'));
+    expect(screen.queryByRole('button', { name: 'items 2', exact: true })).toBeNull();
   });
   for (const recovery of [false, true])
     it(`Native saves an empty added row independently of recovery=${recovery} (${security?.mode || 'trusted'})`, async () => {
