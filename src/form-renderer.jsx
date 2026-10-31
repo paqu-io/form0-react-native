@@ -1397,7 +1397,7 @@ function FormRendererContent({
     ]
   );
   const rootNavigationPanelAvailable =
-    forceShowNavigationPanel || hasSectionNodes(sectionTree) || showRootValidationList;
+    forceShowNavigationPanel || hasSectionNodes(sectionTree) || submitCount > 0;
 
   const handleRootFieldValueChange = useCallback(
     (fieldDef, nextValue, applyValue = setValue) => {
@@ -3899,7 +3899,7 @@ function RepeatableEditorScreen({
     [editorFieldToSectionPath, editorSectionMetadata, entryValidationSummary]
   );
   const canOpenNavigationSheet =
-    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || showEntryValidationList;
+    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || submitCount > 0;
 
   const handleSave = async () => {
     if (readOnly) return;

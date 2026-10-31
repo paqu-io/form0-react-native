@@ -673,6 +673,31 @@ export function runNativeRecordRendererTests(FormRenderer, field, repeatable, se
 }
 
 export function runNativeRuntimeRetentionTests(FormRenderer, field, repeatable, security) {
+  it(`Native keeps row validation navigation after correcting the last error (${security?.mode || 'trusted'})`, async () => {
+    render(
+      <FormRenderer
+        schema={{
+          form: {
+            name: 'Order',
+            elements: [repeatable('items', [field('TextField', 'product', { required: true })])],
+          },
+        }}
+        engineOptions={{ security, events: { lifecycle: false } }}
+      />
+    );
+    fireEvent.click(await screen.findByText('items'));
+    fireEvent.click(screen.getByRole('button', { name: 'View', exact: true }));
+    fireEvent.click(screen.getByText('+ Add'));
+    expect(screen.queryByRole('button', { name: 'items 1', exact: true })).toBeNull();
+    fireEvent.click(await screen.findByText('Save'));
+    await screen.findAllByText('This field is required');
+    fireEvent.change(screen.getByDisplayValue(''), { target: { value: 'Apples' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'items 1', exact: true }));
+    expect(await screen.findByText('No validation issues.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'items 1', exact: true }));
+    expect(await screen.findByText('No validation issues.')).toBeTruthy();
+  });
   for (const recovery of [false, true])
     it(`Native saves an empty added row independently of recovery=${recovery} (${security?.mode || 'trusted'})`, async () => {
       const saved = vi.fn();
@@ -738,6 +763,9 @@ export function runNativeRuntimeRetentionTests(FormRenderer, field, repeatable, 
       value: 9,
       hidden: true,
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Recovery', exact: true }));
+    expect(await screen.findByText('No validation issues.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
     await waitFor(() => expect(saved).toHaveBeenCalledOnce());
