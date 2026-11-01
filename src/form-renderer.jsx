@@ -2,6 +2,8 @@ import { createSubmissionReporter } from './utils/submission-diagnostics.js';
 import { createInstancePathLabeler } from './utils/submission-presentation.js';
 import { RecordCoordinatorProvider, RecordCoordinatorContext, consumeAppliedRecordTree } from './record-context.jsx';
 import { useSubmissionReview } from './use-submission-review.js';
+import { useValidationNavigation } from './use-validation-navigation.js';
+import { getValidationPage, VALIDATION_PAGE_SIZE } from './utils/validation-pagination.js';
 import { SubmissionReview, submissionMessages } from './submission-review.jsx';
 import { useContext } from 'react';
 import { useEventSession, useManagedEventScope } from './use-managed-events.js';
@@ -446,7 +448,8 @@ function buildNavigationIssues(
   summary,
   sectionMetadata = {},
   fieldToSectionPath = {},
-  pathLabeler
+  pathLabeler,
+  resolveHiddenValue
 ) {
   if (!summary?.hasErrors) {
     return [];
@@ -471,6 +474,8 @@ function buildNavigationIssues(
     return {
       id: `${fieldName || 'issue'}-${index}`,
       fieldName,
+      hidden: issue?.hidden === true,
+      resolve: resolveHiddenValue,
       label: issue?.field?.label || fieldName || `Issue ${index + 1}`,
       message: issue?.message || issue?.errorMessage || 'Validation issue',
       instancePath: issue?.instancePath || [],
@@ -758,6 +763,7 @@ function FormRendererContent({
   eventDiagnostics,
   initialFreshness,
   onSubmit,
+  onResolveHiddenValue,
   onSave,
   onSnapshotChange,
   forceShowNavigationPanel = false,
@@ -1226,6 +1232,7 @@ function FormRendererContent({
   const navigateToRootValidationIssue = useCallback(
     (issue) => {
       const raw = issue?.issue || issue;
+      if (raw?.hidden) return;
       if (raw?.instancePath?.length) {
         validationNavigateRef.current?.(raw);
         return;
@@ -1377,12 +1384,26 @@ function FormRendererContent({
         rootValidationSummary,
         sectionMetadata,
         fieldToSectionPath,
-        createInstancePathLabeler(finalSchema, recordCoordinator?.capture())
+        createInstancePathLabeler(finalSchema, recordCoordinator?.capture()),
+        interactionMode === 'edit' && typeof onResolveHiddenValue === 'function'
+          ? (finding) => recordCoordinator.resolveHiddenValue(finding, onResolveHiddenValue)
+          : undefined
       ),
-    [fieldToSectionPath, rootValidationSummary, sectionMetadata]
+    [
+      fieldToSectionPath,
+      rootValidationSummary,
+      sectionMetadata,
+      interactionMode,
+      onResolveHiddenValue,
+      recordCoordinator,
+    ]
+  );
+  const keepRootValidationNavigation = useValidationNavigation(
+    submitCount,
+    rootValidationSummary?.hasErrors
   );
   const rootNavigationPanelAvailable =
-    forceShowNavigationPanel || hasSectionNodes(sectionTree) || showRootValidationList;
+    forceShowNavigationPanel || hasSectionNodes(sectionTree) || keepRootValidationNavigation;
 
   const handleRootFieldValueChange = useCallback(
     (fieldDef, nextValue, applyValue = setValue) => {
@@ -2962,9 +2983,12 @@ function FormNavigationSheet({
   const { theme } = useTheme();
   const hasSections = hasSectionNodes(sections);
   const hasIssues = Array.isArray(issues) && issues.length > 0;
+  const [resolving, setResolving] = useState(false);
+  const [recoveryError, setRecoveryError] = useState(null);
   const [activeTab, setActiveTab] = useState(hasSections ? 'sections' : 'issues');
   const [issueOffset, setIssueOffset] = useState(0);
-  useEffect(() => setIssueOffset(0), [issues]);
+  const issuePage = getValidationPage(issueOffset, issues.length);
+  useEffect(() => setIssueOffset(issuePage.offset), [issuePage.offset]);
 
   useEffect(() => {
     if (!visible) {
@@ -3137,14 +3161,34 @@ function FormNavigationSheet({
             }}
             keyboardShouldPersistTaps="handled"
           >
+            {recoveryError ? (
+              <Text accessibilityRole="alert" style={{ color: theme.color.error }}>
+                {recoveryError}
+              </Text>
+            ) : null}
             {activeTab === 'issues' ? (
               validationEnabled ? (
                 hasIssues ? (
                   <View>
-                    {issues.slice(issueOffset, issueOffset + 50).map((issue) => (
+                    {issues.slice(issuePage.offset, issuePage.end).map((issue) => (
                       <Pressable
                         key={issue.id}
-                        onPress={() => onSelectIssue?.(issue)}
+                        disabled={resolving || (issue.hidden && !issue.resolve)}
+                        onPress={async () => {
+                          if (!issue.hidden) {
+                            onSelectIssue?.(issue);
+                            return;
+                          }
+                          setResolving(true);
+                          setRecoveryError(null);
+                          try {
+                            await issue.resolve(issue.issue);
+                          } catch (error) {
+                            setRecoveryError(error.message || 'The value could not be resolved.');
+                          } finally {
+                            setResolving(false);
+                          }
+                        }}
                         style={({ pressed }) => ({
                           borderWidth: 1,
                           borderColor: theme.color.border,
@@ -3172,6 +3216,13 @@ function FormNavigationSheet({
                         >
                           {issue.message}
                         </Text>
+                        {issue.hidden ? (
+                          <Text style={{ color: theme.color.description }}>
+                            This value is hidden. Make the field visible to correct it, or ask the
+                            application to resolve it.
+                            {issue.resolve ? ' Resolve hidden value.' : ''}
+                          </Text>
+                        ) : null}
                         {issue.sectionLabel ? (
                           <Text
                             style={{
@@ -3184,26 +3235,73 @@ function FormNavigationSheet({
                         ) : null}
                       </Pressable>
                     ))}
-                    <View style={{ flexDirection: 'row' }}>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={!issueOffset}
-                        onPress={() => setIssueOffset(Math.max(0, issueOffset - 50))}
+                    {issuePage.hasPages ? (
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          paddingTop: 10,
+                        }}
                       >
-                        <Text>Previous</Text>
-                      </Pressable>
-                      <Text>
-                        {issueOffset + 1}–{Math.min(issues.length, issueOffset + 50)} /{' '}
-                        {issues.length}
-                      </Text>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={issueOffset + 50 >= issues.length}
-                        onPress={() => setIssueOffset(issueOffset + 50)}
-                      >
-                        <Text>Next</Text>
-                      </Pressable>
-                    </View>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Previous"
+                          accessibilityState={{ disabled: !issuePage.hasPrevious }}
+                          disabled={!issuePage.hasPrevious}
+                          onPress={() => setIssueOffset(issuePage.offset - VALIDATION_PAGE_SIZE)}
+                          style={({ pressed }) => ({
+                            width: 44,
+                            height: 44,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 1,
+                            borderColor: theme.color.border,
+                            borderRadius: theme.borderRadius.md,
+                            backgroundColor: pressed
+                              ? theme.color.cancelHoverBg
+                              : theme.color.section,
+                            opacity: issuePage.hasPrevious ? 1 : 0.4,
+                          })}
+                        >
+                          <Text style={{ color: theme.color.foreground, fontSize: 22 }}>‹</Text>
+                        </Pressable>
+                        <Text
+                          accessibilityLiveRegion="polite"
+                          style={{
+                            color: theme.color.foreground,
+                            fontSize: theme.fontSize.sm,
+                            flexShrink: 1,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {issuePage.offset + 1}–{issuePage.end} of {issues.length}
+                        </Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Next"
+                          accessibilityState={{ disabled: !issuePage.hasNext }}
+                          disabled={!issuePage.hasNext}
+                          onPress={() => setIssueOffset(issuePage.offset + VALIDATION_PAGE_SIZE)}
+                          style={({ pressed }) => ({
+                            width: 44,
+                            height: 44,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 1,
+                            borderColor: theme.color.border,
+                            borderRadius: theme.borderRadius.md,
+                            backgroundColor: pressed
+                              ? theme.color.cancelHoverBg
+                              : theme.color.section,
+                            opacity: issuePage.hasNext ? 1 : 0.4,
+                          })}
+                        >
+                          <Text style={{ color: theme.color.foreground, fontSize: 22 }}>›</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
                   </View>
                 ) : (
                   <Text style={{ color: theme.color.description }}>No validation issues.</Text>
@@ -3854,8 +3952,12 @@ function RepeatableEditorScreen({
       ),
     [editorFieldToSectionPath, editorSectionMetadata, entryValidationSummary]
   );
+  const keepEntryValidationNavigation = useValidationNavigation(
+    submitCount,
+    entryValidationSummary?.hasErrors
+  );
   const canOpenNavigationSheet =
-    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || showEntryValidationList;
+    forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || keepEntryValidationNavigation;
 
   const handleSave = async () => {
     if (readOnly) return;
