@@ -290,6 +290,32 @@ export function eventConformance(test, assert) {
       'stale_generation'
     );
   });
+  test('merging custom findings preserves live intrinsic issues and prepared ordering', () => {
+    const required = { fieldName: 'name', message: 'This field is required' };
+    const invalid = { fieldName: 'amount', message: 'Invalid number' };
+    const scoped = { message: 'Child editor unavailable' };
+    const intrinsic = {
+      hasErrors: true,
+      requiredFieldErrors: [required],
+      generalErrors: [invalid],
+      scopeIssues: [scoped],
+    };
+    const findings = [{ message: 'Check the record', instancePath: [] }];
+    const merged = mergeCustomValidation(intrinsic, findings);
+    assert.deepEqual(merged.orderedIssues.slice(0, 3), [required, invalid, scoped]);
+    assert.equal(merged.orderedIssues[3].kind, 'custom');
+    assert.deepEqual(mergeCustomValidation(intrinsic, []).orderedIssues, [
+      required,
+      invalid,
+      scoped,
+    ]);
+    assert.deepEqual(
+      mergeCustomValidation({ ...intrinsic, orderedIssues: [invalid, required] }, []).orderedIssues,
+      [invalid, required]
+    );
+    assert.deepEqual(intrinsic.generalErrors, [invalid]);
+    assert.equal(mergeCustomValidation({ hasErrors: false }, []).hasErrors, false);
+  });
   test('calculation failures alone never block saving or enter validation', async () => {
     const fixture = eventFixture();
     // Use a genuine throwing calculation, independently of built-in field validity.

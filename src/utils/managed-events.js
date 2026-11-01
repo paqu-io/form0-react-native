@@ -84,7 +84,14 @@ export function mergeCustomValidation(summary, findings = []) {
     hasErrors: Boolean(summary?.hasErrors || customIssues.length),
     requiredFieldErrors: [...(summary?.requiredFieldErrors || [])],
     generalErrors: [...(summary?.generalErrors || []), ...customIssues],
-    orderedIssues: [...(summary?.orderedIssues || []), ...customIssues],
+    orderedIssues: [
+      ...(summary?.orderedIssues || [
+        ...(summary?.requiredFieldErrors || []),
+        ...(summary?.generalErrors || []),
+        ...(summary?.scopeIssues || []),
+      ]),
+      ...customIssues,
+    ],
   };
 }
 

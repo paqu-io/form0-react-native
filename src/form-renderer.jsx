@@ -3,6 +3,7 @@ import { createInstancePathLabeler } from './utils/submission-presentation.js';
 import { RecordCoordinatorProvider, RecordCoordinatorContext, consumeAppliedRecordTree } from './record-context.jsx';
 import { useSubmissionReview } from './use-submission-review.js';
 import { useValidationNavigation } from './use-validation-navigation.js';
+import { getValidationPage, VALIDATION_PAGE_SIZE } from './utils/validation-pagination.js';
 import { SubmissionReview, submissionMessages } from './submission-review.jsx';
 import { useContext } from 'react';
 import { useEventSession, useManagedEventScope } from './use-managed-events.js';
@@ -2986,7 +2987,8 @@ function FormNavigationSheet({
   const [recoveryError, setRecoveryError] = useState(null);
   const [activeTab, setActiveTab] = useState(hasSections ? 'sections' : 'issues');
   const [issueOffset, setIssueOffset] = useState(0);
-  useEffect(() => setIssueOffset(0), [issues]);
+  const issuePage = getValidationPage(issueOffset, issues.length);
+  useEffect(() => setIssueOffset(issuePage.offset), [issuePage.offset]);
 
   useEffect(() => {
     if (!visible) {
@@ -3168,7 +3170,7 @@ function FormNavigationSheet({
               validationEnabled ? (
                 hasIssues ? (
                   <View>
-                    {issues.slice(issueOffset, issueOffset + 50).map((issue) => (
+                    {issues.slice(issuePage.offset, issuePage.end).map((issue) => (
                       <Pressable
                         key={issue.id}
                         disabled={resolving || (issue.hidden && !issue.resolve)}
@@ -3233,26 +3235,73 @@ function FormNavigationSheet({
                         ) : null}
                       </Pressable>
                     ))}
-                    <View style={{ flexDirection: 'row' }}>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={!issueOffset}
-                        onPress={() => setIssueOffset(Math.max(0, issueOffset - 50))}
+                    {issuePage.hasPages ? (
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          paddingTop: 10,
+                        }}
                       >
-                        <Text>Previous</Text>
-                      </Pressable>
-                      <Text>
-                        {issueOffset + 1}–{Math.min(issues.length, issueOffset + 50)} /{' '}
-                        {issues.length}
-                      </Text>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={issueOffset + 50 >= issues.length}
-                        onPress={() => setIssueOffset(issueOffset + 50)}
-                      >
-                        <Text>Next</Text>
-                      </Pressable>
-                    </View>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Previous"
+                          accessibilityState={{ disabled: !issuePage.hasPrevious }}
+                          disabled={!issuePage.hasPrevious}
+                          onPress={() => setIssueOffset(issuePage.offset - VALIDATION_PAGE_SIZE)}
+                          style={({ pressed }) => ({
+                            width: 44,
+                            height: 44,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 1,
+                            borderColor: theme.color.border,
+                            borderRadius: theme.borderRadius.md,
+                            backgroundColor: pressed
+                              ? theme.color.cancelHoverBg
+                              : theme.color.section,
+                            opacity: issuePage.hasPrevious ? 1 : 0.4,
+                          })}
+                        >
+                          <Text style={{ color: theme.color.foreground, fontSize: 22 }}>‹</Text>
+                        </Pressable>
+                        <Text
+                          accessibilityLiveRegion="polite"
+                          style={{
+                            color: theme.color.foreground,
+                            fontSize: theme.fontSize.sm,
+                            flexShrink: 1,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {issuePage.offset + 1}–{issuePage.end} of {issues.length}
+                        </Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Next"
+                          accessibilityState={{ disabled: !issuePage.hasNext }}
+                          disabled={!issuePage.hasNext}
+                          onPress={() => setIssueOffset(issuePage.offset + VALIDATION_PAGE_SIZE)}
+                          style={({ pressed }) => ({
+                            width: 44,
+                            height: 44,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 1,
+                            borderColor: theme.color.border,
+                            borderRadius: theme.borderRadius.md,
+                            backgroundColor: pressed
+                              ? theme.color.cancelHoverBg
+                              : theme.color.section,
+                            opacity: issuePage.hasNext ? 1 : 0.4,
+                          })}
+                        >
+                          <Text style={{ color: theme.color.foreground, fontSize: 22 }}>›</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
                   </View>
                 ) : (
                   <Text style={{ color: theme.color.description }}>No validation issues.</Text>
