@@ -17,6 +17,11 @@ export {
   ImageResolverContext,
 } from './image-resolver-context.jsx';
 export {
+  MediaPickerProvider,
+  useMediaPicker,
+  MediaPickerContext,
+} from './media-picker-context.jsx';
+export {
   registerFieldComponent,
   unregisterFieldComponent,
   resetFieldComponents,

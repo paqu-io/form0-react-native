@@ -20,8 +20,8 @@ function MediaPlaceholder({ field, value, theme }) {
   const pluralNoun = isVideo ? 'videos' : 'photos';
   const title = isVideo ? 'Video capture preview' : 'Photo capture preview';
   const helperText = isVideo
-    ? 'Provide a VideoField renderer override in the host app to record or upload videos.'
-    : 'Provide a PhotoField renderer override in the host app to capture or upload photos.';
+    ? 'Pass a mediaPicker to FormRenderer, or a VideoField renderer, to record or choose videos.'
+    : 'Pass a mediaPicker to FormRenderer, or a PhotoField renderer, to take or choose photos.';
 
   return (
     <View style={{ gap: 10 }}>

@@ -99,13 +99,58 @@ const renderers = {
 />;
 ```
 
-> [!IMPORTANT]
-> `PhotoField` and `VideoField` use placeholder-backed defaults. Production applications should
-> provide renderers that own capture, storage, upload, and permission handling for those fields.
-
 `SignatureField` has a built-in native renderer and can also be overridden. The package includes a
 mobile navigation and validation sheet, repeatable-section drilldown, theme overrides, and an
-image resolver integration point.
+image resolver integration point. `FormLinkField` is not supported yet and shows a placeholder.
+
+## Photo and video fields
+
+The built-in `PhotoField` and `VideoField` list the attached items with captions, show the
+field's limits, and offer camera and library buttons. The package has no camera or photo-library
+dependency: pass a `mediaPicker` to `FormRenderer`, and the fields call it. Without one they show
+a placeholder, and renderers passed through `renderers` replace them as before.
+
+```jsx
+import * as ImagePicker from 'expo-image-picker';
+
+const mediaPicker = {
+  sources: ['camera', 'library'], // optional; this is the default
+  async pick({ kind, source, multiple, limit }) {
+    const options = {
+      mediaTypes: kind === 'video' ? ['videos'] : ['images'],
+      allowsMultipleSelection: multiple,
+      ...(limit ? { selectionLimit: limit } : {}),
+    };
+    if (source === 'camera') {
+      const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+      if (!granted) throw new Error('Allow camera access to take photos and videos.');
+    }
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+    if (result.canceled) return [];
+    return result.assets.map((asset) => ({
+      uri: asset.uri,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      fileSize: asset.fileSize,
+      duration: asset.duration == null ? null : asset.duration / 1000, // seconds
+    }));
+  },
+};
+
+<FormRenderer schema={schema} mediaPicker={mediaPicker} />;
+```
+
+`pick` resolves to the picked items, or to an empty array when the user cancels; an error's
+message is shown under the field. `limit` is how many more photos the field accepts, or `null`.
+Each item needs a `uri`, and videos need a `duration` in seconds. Pickers often return temporary
+files, so copy them somewhere permanent if records keep them.
+
+Values use the same entries as `form0-react`: `photo_id` or `video_id`, `media_id`, `filename`,
+`caption`, `url` (the local file), `mime_type`, `size_bytes`, timestamps, and
+`upload_status: 'local'`. Uploading the files is up to the app.
 
 ## Compatibility note for 0.3.0
 

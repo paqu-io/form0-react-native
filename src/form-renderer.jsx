@@ -36,6 +36,7 @@ import { useRepeatableInstanceEngine } from './use-repeatable-instance.js';
 import { FormHeader } from './form-header.jsx';
 import { ThemeProvider, useTheme } from './theme-context.jsx';
 import { ImageResolverProvider } from './image-resolver-context.jsx';
+import { MediaPickerProvider } from './media-picker-context.jsx';
 import { ChevronRight } from 'lucide-react-native';
 import {
   addRepeatableInstanceToState,
@@ -786,6 +787,7 @@ function FormRendererContent({
   colorMode = 'light',
   customTheme = null,
   imageResolver = null,
+  mediaPicker = null,
   engineOptions,
 }) {
   const mainScroll = useKeyboardAwareScroll({
@@ -2762,43 +2764,45 @@ function FormRendererContent({
         pending={persistedFreshness?.status === 'pending'}
       >
         <ImageResolverProvider resolver={imageResolver}>
-          <FieldRegistryProvider registry={registry} renderers={renderers}>
-            <FormRendererInner
-              showHeader={showHeader}
-              activeRepeatableScreen={activeRepeatableScreen}
-              formName={formName}
-              interactionMode={interactionMode}
-              requestCancel={typeof onRequestClose === 'function' ? requestCancel : undefined}
-              handlePrimaryAction={hasPrimaryAction ? handlePrimaryAction : undefined}
-              enterEditMode={enterEditMode}
-              canPrimaryAction={canPrimaryAction}
-              primaryActionMode={primaryActionMode}
-              primaryActionLabel={resolvedPrimaryActionLabel}
-              headerAccessory={headerAccessory}
-              showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
-              canOpenNavigationSheet={rootNavigationPanelAvailable}
-              navigationSections={sectionTree}
-              navigationIssues={showRootValidationList ? rootNavigationIssues : []}
-              navigationValidationEnabled={submitCount > 0}
-              onNavigateToSection={navigateToRootSection}
-              onSelectValidationIssue={navigateToRootValidationIssue}
-              activeNavigationSectionId={activeDrilldownSectionId}
-              renderRepeatableScreens={renderRepeatableScreens}
-              renderMainFormContent={renderMainFormContent}
-              // Drilldown state props
-              isRootPage={isRootPage}
-              isFirstSpecialPage={isFirstSpecialPage}
-              isNestedDrilldownPage={isNestedDrilldownPage}
-              isRepeatableFirstPage={isRepeatableFirstPage}
-              activeDrilldownSectionInfo={activeDrilldownSectionInfo}
-              popDrilldownLevel={popDrilldownLevel}
-            />
-            <OperationAlertDialog
-              visible={Boolean(activeAlert)}
-              alert={activeAlert}
-              onClose={closeAlert}
-            />
-          </FieldRegistryProvider>
+          <MediaPickerProvider picker={mediaPicker}>
+            <FieldRegistryProvider registry={registry} renderers={renderers}>
+              <FormRendererInner
+                showHeader={showHeader}
+                activeRepeatableScreen={activeRepeatableScreen}
+                formName={formName}
+                interactionMode={interactionMode}
+                requestCancel={typeof onRequestClose === 'function' ? requestCancel : undefined}
+                handlePrimaryAction={hasPrimaryAction ? handlePrimaryAction : undefined}
+                enterEditMode={enterEditMode}
+                canPrimaryAction={canPrimaryAction}
+                primaryActionMode={primaryActionMode}
+                primaryActionLabel={resolvedPrimaryActionLabel}
+                headerAccessory={headerAccessory}
+                showPrimaryActionsInViewMode={showPrimaryActionsInViewMode}
+                canOpenNavigationSheet={rootNavigationPanelAvailable}
+                navigationSections={sectionTree}
+                navigationIssues={showRootValidationList ? rootNavigationIssues : []}
+                navigationValidationEnabled={submitCount > 0}
+                onNavigateToSection={navigateToRootSection}
+                onSelectValidationIssue={navigateToRootValidationIssue}
+                activeNavigationSectionId={activeDrilldownSectionId}
+                renderRepeatableScreens={renderRepeatableScreens}
+                renderMainFormContent={renderMainFormContent}
+                // Drilldown state props
+                isRootPage={isRootPage}
+                isFirstSpecialPage={isFirstSpecialPage}
+                isNestedDrilldownPage={isNestedDrilldownPage}
+                isRepeatableFirstPage={isRepeatableFirstPage}
+                activeDrilldownSectionInfo={activeDrilldownSectionInfo}
+                popDrilldownLevel={popDrilldownLevel}
+              />
+              <OperationAlertDialog
+                visible={Boolean(activeAlert)}
+                alert={activeAlert}
+                onClose={closeAlert}
+              />
+            </FieldRegistryProvider>
+          </MediaPickerProvider>
         </ImageResolverProvider>
       </RecordReviewBoundary>
     </ThemeProvider>
