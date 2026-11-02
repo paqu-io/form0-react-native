@@ -309,6 +309,8 @@ export type FormRendererProps = {
   colorMode?: 'light' | 'dark' | 'system';
   customTheme?: Record<string, any> | null;
   imageResolver?: ((path: string) => any) | null;
+  /** Captures media for the built-in PhotoField and VideoField; without it they show a placeholder. */
+  mediaPicker?: MediaPicker | null;
   engineOptions?: FormRendererEngineOptions;
 };
 
@@ -336,6 +338,41 @@ export const ImageResolverProvider: ComponentType<{
 }>;
 export const useImageResolver: () => ((path: string) => any) | null;
 export const ImageResolverContext: Context<any>;
+
+export type MediaKind = 'photo' | 'video';
+export type MediaSource = 'camera' | 'library';
+export type MediaPickRequest = {
+  kind: MediaKind;
+  source: MediaSource;
+  /** Whether the library may return several items. */
+  multiple: boolean;
+  /** Photos the field still accepts (max_length minus attached), or null without a limit. */
+  limit: number | null;
+  field: Record<string, any>;
+};
+export type PickedMedia = {
+  /** Must stay readable for as long as the record needs the file. */
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  /** Seconds; form0-core requires a duration on every video. */
+  duration?: number | null;
+  /** ISO 8601 timestamp; defaults to the time the item was attached. */
+  capturedAt?: string | null;
+};
+export type MediaPicker = {
+  /** Resolve to [] or null when cancelled; throw an Error to show its message under the field. */
+  pick: (request: MediaPickRequest) => Promise<PickedMedia[] | null | undefined>;
+  /** Buttons to show, in order. Defaults to ['camera', 'library']. */
+  sources?: MediaSource[];
+};
+export const MediaPickerProvider: ComponentType<{
+  picker?: MediaPicker | null;
+  children?: ReactNode;
+}>;
+export const useMediaPicker: () => MediaPicker | null;
+export const MediaPickerContext: Context<MediaPicker | null>;
 
 export const registerFieldComponent: (type: string, component: Form0FieldRenderer) => void;
 export const unregisterFieldComponent: (type: string) => void;

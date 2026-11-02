@@ -19,8 +19,8 @@ land without a tracker edit.
 | Navigation / validation panel | Implemented | Mobile now exposes a package-owned title-tap sheet for section navigation and validation issues on root and repeatable editor screens. |
 | SignatureField | Implemented | Native ships a package-agnostic built-in renderer that preserves the `form0-core` output contract. |
 | Drilldown Section rendering | Implemented | Normal native `Section` drilldowns now render through a clean active section body path while preserving existing `RepeatableSection` list/editor flows. |
-| PhotoField strategy | Implemented | The package still defaults to override-driven integration. The built-in registration remains intentionally placeholder-backed. |
-| VideoField strategy | Implemented | The package still defaults to override-driven integration. The built-in registration remains intentionally placeholder-backed. |
+| PhotoField | Implemented | Built-in renderer with captions, limits, camera and library buttons. Capture goes through the app's `mediaPicker`; without one it stays a placeholder, and `renderers` overrides still win. |
+| VideoField | Implemented | Same as PhotoField, with durations in seconds and limits in total minutes, as `form0-core` validates them. |
 | Types | Implemented | `form0-react-native` now ships first-party `.d.ts` declarations. |
 | Tests | Next | Runtime and source coverage were extended for parity work, but interaction-level coverage should continue to grow. |
 | Consumer adoption: reform-mobile-react-native-expo | Implemented | The app uses `initialSnapshot` and `onSnapshotChange`, keeps media overrides in place, and should drop its app-local type shim once the published package is reinstalled. |
@@ -35,8 +35,8 @@ Status vocabulary:
 ## Decisions
 
 - `BuildingPlanSection` and `FormLinkField` are out of scope for this parity track.
-- `PhotoField` and `VideoField` remain override-driven for now.
-- `SignatureField` is the only media field that moved to a built-in native implementation in this round.
+- `PhotoField` and `VideoField` ship built-in renderers but no capture dependency: the app passes a `mediaPicker`. Uploading stays with the app (`upload_status: 'local'`).
+- `SignatureField` has a built-in native implementation.
 - Full worker/store parity is deferred and is not part of the first-class native target.
 - Full web prop-surface parity is not a goal. User-meaningful runtime parity is the goal.
 - Consumer-supplied `renderers` keep precedence over built-in field components.

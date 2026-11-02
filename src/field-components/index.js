@@ -11,6 +11,7 @@ import { TitleFieldComponent } from './title-field.js';
 import { StatusFieldComponent } from './status-field.js';
 import { SignatureFieldComponent } from './signature-field.js';
 import { PlaceholderFieldComponent } from './placeholder-field.js';
+import { PhotoFieldComponent, VideoFieldComponent } from './media-field.js';
 
 export {
   TextFieldComponent,
@@ -25,6 +26,8 @@ export {
   TitleFieldComponent,
   StatusFieldComponent,
   SignatureFieldComponent,
+  PhotoFieldComponent,
+  VideoFieldComponent,
   PlaceholderFieldComponent,
 };
 
@@ -40,10 +43,12 @@ export const defaultFieldComponents = {
   LabelField: LabelFieldComponent,
   TitleField: TitleFieldComponent,
   StatusField: StatusFieldComponent,
-  PhotoField: PlaceholderFieldComponent,
-  VideoField: PlaceholderFieldComponent,
+  PhotoField: PhotoFieldComponent,
+  VideoField: VideoFieldComponent,
   SignatureField: SignatureFieldComponent,
   FormLinkField: PlaceholderFieldComponent,
 };
 
-export const placeholderBackedFieldTypes = ['PhotoField', 'VideoField', 'FormLinkField'];
+// PhotoField and VideoField fall back to the placeholder only without a
+// mediaPicker, and warn about it themselves.
+export const placeholderBackedFieldTypes = ['FormLinkField'];
