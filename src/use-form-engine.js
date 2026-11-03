@@ -3,7 +3,7 @@ import { useEngineMode } from './use-engine-mode.js';
 import { createEventEngineBinding } from './utils/event-engine.js';
 import { useEngineDiagnostics } from './use-engine-diagnostics.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { validateSchema } from 'form0-core';
+import { validateSchema, expandBuildingPlanSchema } from 'form0-core';
 import { buildRepeatableInfo } from './utils/repeatable-manager.js';
 import { ensureKeys } from './utils/ensure-keys';
 import { normalizeChoiceOperationValue } from './utils/choice-operation-values.js';
@@ -40,7 +40,7 @@ function hasMissingKeys(elements) {
 
 function prepareSchema(schema) {
   if (!schema) return null;
-  const copy = cloneDeep(schema);
+  const { schema: copy } = expandBuildingPlanSchema(cloneDeep(schema));
   if (copy?.form?.elements && hasMissingKeys(copy.form.elements)) {
     ensureKeys(copy.form.elements);
   }

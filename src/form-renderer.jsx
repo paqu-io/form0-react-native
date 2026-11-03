@@ -1,6 +1,10 @@
 import { createSubmissionReporter } from './utils/submission-diagnostics.js';
 import { createInstancePathLabeler } from './utils/submission-presentation.js';
-import { RecordCoordinatorProvider, RecordCoordinatorContext, consumeAppliedRecordTree } from './record-context.jsx';
+import {
+  RecordCoordinatorProvider,
+  RecordCoordinatorContext,
+  consumeAppliedRecordTree,
+} from './record-context.jsx';
 import { useSubmissionReview } from './use-submission-review.js';
 import { useValidationNavigation } from './use-validation-navigation.js';
 import { getValidationPage, VALIDATION_PAGE_SIZE } from './utils/validation-pagination.js';
@@ -61,7 +65,17 @@ import {
   buildSubmissionTimestampSnapshot,
   DEFAULT_FIELD_KEY_MODE,
 } from './utils/submission.js';
-import { buildDatasetDescriptors, resolveDatasetRowTitle } from 'form0-core';
+import {
+  buildDatasetDescriptors,
+  resolveDatasetRowTitle,
+  getBuildingPlanMetadata,
+  createBuildingPlanEditor,
+  resolveBuildingPlanRow,
+  createRecordEvaluator,
+  generateUuidV7,
+  isBuildingPlanInternalCollection,
+} from 'form0-core';
+import { BuildingPlanCanvas } from './building-plan/canvas.jsx';
 
 const SECTION_TYPES = new Set(['Section', 'BuildingPlanSection']);
 const SECTION_LIKE_TYPES = new Set(['Section', 'RepeatableSection', 'BuildingPlanSection']);
@@ -1645,9 +1659,10 @@ function FormRendererContent({
       mode,
       draft,
       validationFocus,
+      buildingPlanFocusPath,
     }) => {
       const frozenParentPath = Array.isArray(parentPath) ? cloneDeep(parentPath) : [];
-      const resolvedInitialInstance =
+      let resolvedInitialInstance =
         mode === 'edit'
           ? cloneDeep(
               controller?.getInstance?.(repeatableKey, instanceId, frozenParentPath) ||
@@ -1656,9 +1671,60 @@ function FormRendererContent({
             )
           : cloneDeep(draft || createEmptyRepeatableInstance(repInfo));
       const frozenParentValues = cloneDeep(controller?.buildParentValues?.(frozenParentPath) || {});
+      let buildingPlan = null;
+      const meta = getBuildingPlanMetadata(finalSchema).find((entry) =>
+        entry.repeatables.some((node) => node.preferredKey === repeatableKey)
+      );
+      if (meta) {
+        const floorKey = meta.repeatablesByNodeKey.floors.preferredKey;
+        const editor =
+          controller.buildingPlan?.editor ||
+          createBuildingPlanEditor({
+            meta,
+            record: {
+              values: {},
+              repeatable: {
+                [floorKey]: controller.getInstances(floorKey, frozenParentPath) || [],
+              },
+            },
+          });
+        const path = controller.buildingPlan
+          ? [
+              ...controller.buildingPlan.path,
+              ...frozenParentPath,
+              { key: repeatableKey, id: resolvedInitialInstance.id },
+            ]
+          : [{ key: repeatableKey, id: resolvedInitialInstance.id }];
+        const scopeId = generateUuidV7();
+        const opened = editor.openRow({
+          path,
+          scopeId,
+          parentScopeId: controller.buildingPlan?.scopeId || null,
+          row: resolvedInitialInstance,
+        });
+        if (opened.issues.length) throw new TypeError(opened.issues[0].message);
+        resolvedInitialInstance = opened.row;
+        buildingPlan = {
+          editor,
+          meta,
+          path,
+          scopeId,
+          evaluator:
+            controller.buildingPlan?.evaluator ||
+            createRecordEvaluator({
+              schema: finalSchema,
+              ...engineOptions,
+              diagnostics: { console: false },
+            }),
+          evaluationValues: controller.buildingPlan?.evaluationValues || frozenParentValues,
+          focusPath: buildingPlanFocusPath,
+        };
+      }
 
       pushRepeatableScreen({
         type: 'edit',
+        buildingPlan,
+        openBuildingPlanRow: (config) => openRepeatableEditor(config),
         validationFocus,
         field,
         controller,
@@ -1686,7 +1752,7 @@ function FormRendererContent({
         }),
       });
     },
-    [engineOptions, pushRepeatableScreen, diagnosticGeneration]
+    [engineOptions, pushRepeatableScreen, diagnosticGeneration, finalSchema]
   );
 
   validationNavigateRef.current = (issue) => {
@@ -1826,6 +1892,13 @@ function FormRendererContent({
 
       return items.map((field) => {
         if (!field) return null;
+        if (isBuildingPlanInternalCollection(controller?.buildingPlan?.meta, field.data_name))
+          return null;
+        const planField = controller?.buildingPlan?.editor.fieldState(
+          controller.buildingPlan.path,
+          field.data_name
+        );
+        if (planField?.managed) return null;
         const visibilityKey = field.data_name;
         const fieldVisible = visibilityKey
           ? Object.prototype.hasOwnProperty.call(state?.visible || {}, visibilityKey)
@@ -1989,7 +2062,8 @@ function FormRendererContent({
 
         if (SECTION_TYPES.has(field.type)) {
           const sectionId = field.data_name || field.key;
-          const display = field.display || 'inline';
+          const display =
+            field.type === 'BuildingPlanSection' ? 'drilldown' : field.display || 'inline';
           const sectionPath = sectionId ? [...parentSectionPath, sectionId] : parentSectionPath;
           const sectionRef =
             sectionId && typeof registerSectionContainer === 'function'
@@ -2247,6 +2321,52 @@ function FormRendererContent({
                 : undefined
             }
           >
+            {planField?.source && (
+              <View
+                accessibilityLabel={
+                  planField.scope === 'physical_wall' ? 'Shared physical wall' : 'Room side'
+                }
+                style={{ marginBottom: 6 }}
+              >
+                <Text
+                  style={{
+                    color: t.color.description,
+                    fontSize: t.fontSize.sm,
+                  }}
+                >
+                  {planField.scope === 'physical_wall' ? 'Shared physical wall' : 'Room side'} ·{' '}
+                  {planField.source.mode === 'inherit' ? 'Inherited from ' : 'Override at '}
+                  {{
+                    floor: 'floor default',
+                    room: 'room default',
+                    physical_wall: 'this wall',
+                    room_face: 'this room side',
+                    construction_segment: 'this construction segment',
+                    schema: 'form default',
+                  }[planField.source.scope] || planField.source.scope}
+                </Text>
+                {!fieldReadOnly &&
+                  planField.inheritable &&
+                  planField.source.mode === 'override' && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        const context = controller.buildingPlan;
+                        const row = resolveBuildingPlanRow(
+                          context.editor.getRecord(),
+                          context.path
+                        );
+                        context.editor.updateRow(context.scopeId, row, {
+                          resetProperties: [planField.property],
+                        });
+                      }}
+                      style={{ minHeight: 44, justifyContent: 'center' }}
+                    >
+                      <Text style={{ color: t.color.primary }}>Reset to inheritance</Text>
+                    </Pressable>
+                  )}
+              </View>
+            )}
             <FieldRenderer
               field={field}
               value={fieldValue}
@@ -2497,6 +2617,38 @@ function FormRendererContent({
         return;
       }
       const { repeatableKey, parentPath, mode: saveMode, instanceId } = screen;
+      if (screen.buildingPlan) {
+        const { editor, path, scopeId } = screen.buildingPlan;
+        const updated = editor.updateRow(scopeId, payload);
+        if (updated.issues.length) throw new TypeError(updated.issues[0].message);
+        payload = {
+          ...resolveBuildingPlanRow(editor.getRecord(), path),
+          ...payload,
+          values: resolveBuildingPlanRow(editor.getRecord(), path).values,
+          repeatable: resolveBuildingPlanRow(editor.getRecord(), path).repeatable,
+        };
+        const accepted = editor.acceptRow(scopeId);
+        if (accepted.issues.length) throw new TypeError(accepted.issues[0].message);
+        if (screen.controller.buildingPlan) {
+          if (eventSession.config.lifecycle)
+            screen.controller.eventDispatch?.(
+              'change',
+              repeatableChangeMetadata(
+                screen.controller,
+                repeatableKey,
+                payload.id,
+                parentPath,
+                saveMode === 'edit' ? 'edit' : 'add',
+                screen.instanceIndex
+              ),
+              screen.field?.data_name
+            );
+          if (beforeClose && (await beforeClose()).status !== 'completed') return;
+          popRepeatableScreen();
+          return;
+        }
+      }
+
       if (saveMode === 'edit' && typeof screen.controller.updateInstance === 'function') {
         screen.controller.updateInstance(repeatableKey, instanceId, () => payload, parentPath);
       } else if (saveMode !== 'edit' && typeof screen.controller.addInstance === 'function') {
@@ -2562,14 +2714,53 @@ function FormRendererContent({
         screen.controller.getInstances?.(screen.repeatableKey, screen.parentPath) || [];
       const index = instances.findIndex((entry) => entry.id === instanceId);
 
+      let buildingPlanRemoval = null;
+      const context = screen.controller.buildingPlan;
+      const meta =
+        context?.meta ||
+        getBuildingPlanMetadata(finalSchema).find(
+          (entry) => entry.repeatablesByNodeKey.floors.preferredKey === screen.repeatableKey
+        );
+      if (meta) {
+        const editor =
+          context?.editor ||
+          createBuildingPlanEditor({
+            meta,
+            record: {
+              values: {},
+              repeatable: { [screen.repeatableKey]: instances },
+            },
+          });
+        const path = context
+          ? [
+              ...context.path,
+              ...(screen.parentPath || []),
+              { key: screen.repeatableKey, id: instanceId },
+            ]
+          : [{ key: screen.repeatableKey, id: instanceId }];
+        const preview = editor.removeRow(path, {
+          scopeId: context?.scopeId || null,
+          preview: true,
+        });
+        buildingPlanRemoval = {
+          editor,
+          path,
+          scopeId: context?.scopeId || null,
+          root: !context,
+          warning: preview.issues.map((issue) => issue.message).join(' '),
+        };
+      }
       setPendingRepeatableRemoval({
+        buildingPlanRemoval,
         controller: screen.controller,
         repeatableKey: screen.repeatableKey,
         parentPath: screen.parentPath,
         instanceId,
         fieldName: screen.field?.data_name,
         instanceIndex: index,
-        entryTitle: getRepeatableEntryTitle(screen.field, instance, Math.max(index, 0)),
+        entryTitle:
+          getRepeatableEntryTitle(screen.field, instance, Math.max(index, 0)) +
+          (buildingPlanRemoval?.warning ? '\n\n' + buildingPlanRemoval.warning : ''),
       });
     },
     [getRepeatableEntryTitle]
@@ -2585,7 +2776,23 @@ function FormRendererContent({
       return;
     }
 
-    if (typeof pendingRepeatableRemoval.controller.removeInstance === 'function') {
+    if (pendingRepeatableRemoval.buildingPlanRemoval) {
+      const planned = pendingRepeatableRemoval.buildingPlanRemoval;
+      const result = planned.editor.removeRow(planned.path, {
+        scopeId: planned.scopeId,
+        allowObservationDeletion: true,
+      });
+      if (result.issues.length) {
+        Alert.alert('Cannot remove entry', result.issues.map((issue) => issue.message).join(' '));
+        return;
+      }
+      if (planned.root)
+        pendingRepeatableRemoval.controller.setInstances(
+          pendingRepeatableRemoval.repeatableKey,
+          result.record.repeatable[pendingRepeatableRemoval.repeatableKey] || [],
+          pendingRepeatableRemoval.parentPath
+        );
+    } else if (typeof pendingRepeatableRemoval.controller.removeInstance === 'function') {
       pendingRepeatableRemoval.controller.removeInstance(
         pendingRepeatableRemoval.repeatableKey,
         pendingRepeatableRemoval.instanceId,
@@ -2630,6 +2837,15 @@ function FormRendererContent({
 
   // Render the main form content (with themed background)
   const renderMainFormContent = (theme) => {
+    const planField =
+      activeDrilldownSectionInfo?.type === 'BuildingPlanSection'
+        ? activeDrilldownSectionInfo.field
+        : null;
+    const planMeta = planField?.building_plan?.meta;
+    const floorInfo =
+      planMeta &&
+      repeatableMetadata.byPreferredKey?.get(planMeta.repeatablesByNodeKey.floors.preferredKey);
+
     const renderOptions = {
       state: { values, visible, required, read_only, errors },
       setValue,
@@ -2666,6 +2882,42 @@ function FormRendererContent({
         contentContainerStyle={{ padding: 16 }}
         style={{ backgroundColor: theme.color.background }}
       >
+        {planMeta?.version === 1 && (
+          <BuildingPlanCanvas
+            meta={planMeta}
+            record={{ values, repeatable: repeatableState }}
+            readOnly={isReadOnly}
+            onAddFloor={() => {
+              const draft = createEmptyRepeatableInstance(floorInfo);
+              openRepeatableEditor({
+                field: floorInfo.field,
+                controller: formRepeatableController,
+                parentPath: [],
+                repeatableKey: floorInfo.preferredKey,
+                repInfo: floorInfo,
+                instanceId: draft.id,
+                mode: 'create',
+                draft,
+              });
+            }}
+            onFocusRow={(path) => {
+              const first = path[0];
+              const row = repeatableState[first.key]?.[first.index];
+              if (row)
+                openRepeatableEditor({
+                  field: floorInfo.field,
+                  controller: formRepeatableController,
+                  parentPath: [],
+                  repeatableKey: floorInfo.preferredKey,
+                  repInfo: floorInfo,
+                  instanceId: row.id,
+                  instanceIndex: first.index,
+                  mode: 'edit',
+                  buildingPlanFocusPath: path,
+                });
+            }}
+          />
+        )}
         {activeSectionBody || renderElements(elements, renderOptions)}
       </KeyboardFormScrollView>
     );
@@ -3252,7 +3504,9 @@ function FormNavigationSheet({
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel="Previous"
-                          accessibilityState={{ disabled: !issuePage.hasPrevious }}
+                          accessibilityState={{
+                            disabled: !issuePage.hasPrevious,
+                          }}
                           disabled={!issuePage.hasPrevious}
                           onPress={() => setIssueOffset(issuePage.offset - VALIDATION_PAGE_SIZE)}
                           style={({ pressed }) => ({
@@ -3269,7 +3523,14 @@ function FormNavigationSheet({
                             opacity: issuePage.hasPrevious ? 1 : 0.4,
                           })}
                         >
-                          <Text style={{ color: theme.color.foreground, fontSize: 22 }}>‹</Text>
+                          <Text
+                            style={{
+                              color: theme.color.foreground,
+                              fontSize: 22,
+                            }}
+                          >
+                            ‹
+                          </Text>
                         </Pressable>
                         <Text
                           accessibilityLiveRegion="polite"
@@ -3302,7 +3563,14 @@ function FormNavigationSheet({
                             opacity: issuePage.hasNext ? 1 : 0.4,
                           })}
                         >
-                          <Text style={{ color: theme.color.foreground, fontSize: 22 }}>›</Text>
+                          <Text
+                            style={{
+                              color: theme.color.foreground,
+                              fontSize: 22,
+                            }}
+                          >
+                            ›
+                          </Text>
                         </Pressable>
                       </View>
                     ) : null}
@@ -3578,6 +3846,8 @@ function RepeatableEditorScreen({
     read_only,
     errors,
     setValue: setRawValue,
+    setValues,
+    engineReadyVersion,
     getEventBinding,
     submit,
     repeatable,
@@ -3599,6 +3869,47 @@ function RepeatableEditorScreen({
     diagnosticInstancePath: screen.diagnosticInstancePath,
     diagnosticsActive,
   });
+  const [planRevision, setPlanRevision] = useState(0);
+  const [planIssues, setPlanIssues] = useState([]);
+  const incomingPlanValues = useRef(null);
+  const domainRevision = screen.buildingPlan?.editor.getState().revision;
+  useEffect(() => {
+    const context = screen.buildingPlan;
+    if (context)
+      context.editor
+        .evaluate(context.evaluator, context.evaluationValues)
+        .catch((error) => setPlanIssues([{ message: error.message }]));
+  }, [domainRevision, screen.buildingPlan]);
+  useEffect(() => {
+    const context = screen.buildingPlan;
+    if (!context) return;
+    return context.editor.subscribe(() => {
+      setPlanRevision(context.editor.getRevision());
+      setPlanIssues([]);
+      // Opening a child also publishes; browsing a readonly row is not a value write.
+      if (readOnly || !context.editor.hasEditor(context.scopeId)) return;
+      const row = resolveBuildingPlanRow(context.editor.getRecord(), context.path);
+      if (!row) return;
+      incomingPlanValues.current = JSON.stringify(row.values);
+      setValues(row.values);
+      for (const [key, rows] of Object.entries(row.repeatable || {}))
+        setRepeatableInstances(key, rows, []);
+    });
+  }, [screen.buildingPlan, setValues, setRepeatableInstances, readOnly]);
+  useEffect(() => {
+    const context = screen.buildingPlan;
+    if (!context || !engineReadyVersion || readOnly || !context.editor.hasEditor(context.scopeId))
+      return;
+    const signature = JSON.stringify(values);
+    if (signature === incomingPlanValues.current) return;
+    incomingPlanValues.current = signature;
+    const result = context.editor.updateRow(context.scopeId, {
+      ...initialInstance,
+      values,
+      repeatable,
+    });
+    setPlanIssues(result.issues);
+  }, [values, repeatable, engineReadyVersion, readOnly, screen.buildingPlan]);
   const titleDatasets = useMemo(() => buildTitleDatasetIndex(schema), [schema]);
   const entryTitle =
     resolveDatasetRowTitle(titleDatasets.byRepeatableKey.get(screen.repeatableKey), values) ||
@@ -3640,6 +3951,7 @@ function RepeatableEditorScreen({
   );
   const controller = useMemo(
     () => ({
+      buildingPlan: screen.buildingPlan,
       diagnosticInstancePath: screen.diagnosticInstancePath,
       canEdit: () => !readOnly,
       eventDispatch: (...args) => rowDispatchRef.current?.dispatch(...args),
@@ -3684,12 +3996,19 @@ function RepeatableEditorScreen({
         resolveNestedRepeatableKey,
         (field) => {
           if (!field?.data_name) return field?.visible !== false;
+          if (isBuildingPlanInternalCollection(screen.buildingPlan?.meta, field.data_name))
+            return false;
           return Object.prototype.hasOwnProperty.call(visible || {}, field.data_name)
             ? visible[field.data_name] !== false
             : field.visible !== false;
         }
       ),
-    [resolveNestedRepeatableKey, screen.repInfo?.field?.elements, visible]
+    [
+      resolveNestedRepeatableKey,
+      screen.repInfo?.field?.elements,
+      visible,
+      screen.buildingPlan?.meta,
+    ]
   );
   const [activeDrilldownPath, setActiveDrilldownPath] = useState([]);
   const [navigationSheetVisible, setNavigationSheetVisible] = useState(false);
@@ -3939,7 +4258,16 @@ function RepeatableEditorScreen({
   rowDispatchRef.current = rowEvents;
   const cancelEntry = useCallback(async () => {
     const result = await rowEvents.close(true);
-    if (result.status === 'completed') onBack();
+    if (result.status === 'completed') {
+      if (screen.buildingPlan) {
+        const cancelled = screen.buildingPlan.editor.cancelRow(screen.buildingPlan.scopeId);
+        if (cancelled.issues.length) {
+          setPlanIssues(cancelled.issues);
+          return;
+        }
+      }
+      onBack();
+    }
   }, [rowEvents.close, onBack]);
 
   const entryValidationSummary = useMemo(
@@ -3964,7 +4292,7 @@ function RepeatableEditorScreen({
     forceShowNavigationPanel || hasSectionNodes(editorSectionTree) || keepEntryValidationNavigation;
 
   const handleSave = async () => {
-    if (readOnly) return;
+    if (readOnly || planIssues.length) return;
     if (rowEvents.record || rowEvents.lifecycle) {
       setSubmitCount((count) => count + 1);
       const closeTarget = rowEvents.captureClose();
@@ -4090,6 +4418,43 @@ function RepeatableEditorScreen({
         contentContainerStyle={{ padding: 16 }}
         style={{ backgroundColor: theme.color.background }}
       >
+        {screen.buildingPlan &&
+          ['floors', 'rooms'].includes(
+            screen.buildingPlan.editor.resolveRow(screen.buildingPlan.path).node.nodeKey
+          ) && (
+            <BuildingPlanCanvas
+              context={screen.buildingPlan}
+              readOnly={readOnly}
+              onFocusRow={(indexPath) => {
+                const record = screen.buildingPlan.editor.getRecord();
+                let row = record;
+                const path = indexPath.map((part) => {
+                  row = row.repeatable[part.key][part.index];
+                  return { key: part.key, id: row.id };
+                });
+                const local = path.slice(screen.buildingPlan.path.length);
+                if (!local.length) return;
+                const target = local.at(-1);
+                const info = controller.repeatableMetadata.byPreferredKey?.get(target.key);
+                if (info)
+                  screen.openBuildingPlanRow?.({
+                    field: info.field,
+                    controller,
+                    parentPath: local.slice(0, -1),
+                    repeatableKey: target.key,
+                    repInfo: info,
+                    instanceId: target.id,
+                    mode: 'edit',
+                    draft: row,
+                  });
+              }}
+            />
+          )}
+        {planIssues.length > 0 && (
+          <Text accessibilityRole="alert" style={{ color: theme.color.error }}>
+            {planIssues.map((issue) => issue.message).join(' ')}
+          </Text>
+        )}
         {activeSectionBody || renderElements(screen.repInfo?.field?.elements || [], renderOptions)}
       </KeyboardFormScrollView>
       <FormNavigationSheet
