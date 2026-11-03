@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, PanResponder, TextInput, Alert } from 'react-native';
-import Svg, { G, Polygon, Polyline, Line, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Polygon, Polyline, Path, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { BuildingPlanCanvasController } from 'form0-core';
 import { useTheme } from '../theme-context.jsx';
 import { Text } from '../typography.jsx';
@@ -49,7 +49,10 @@ export function BuildingPlanCanvas({
   const [mode, setMode] = useState('select');
   const [width, setWidth] = useState(320);
   const [issues, setIssues] = useState([]);
-  const [editingPolicy, setEditingPolicy] = useState({ snapping: true, edgeAutoPan: true });
+  const [editingPolicy, setEditingPolicy] = useState({
+    snapping: true,
+    edgeAutoPan: true,
+  });
   const policyRef = useRef(editingPolicy);
   policyRef.current = editingPolicy;
   const [dimensions, setDimensions] = useState({ width: '', height: '' });
@@ -69,7 +72,11 @@ export function BuildingPlanCanvas({
             'Opening conflict',
             `${issue.message}${issue.observationIds.length ? ` This also deletes ${issue.observationIds.length} associated observation(s).` : ''}`,
             [
-              { text: 'Keep previous layout', style: 'cancel', onPress: () => resolve(false) },
+              {
+                text: 'Keep previous layout',
+                style: 'cancel',
+                onPress: () => resolve(false),
+              },
               {
                 text: 'Keep position and remove',
                 style: 'destructive',
@@ -283,7 +290,11 @@ export function BuildingPlanCanvas({
         {['snapping', 'edgeAutoPan'].map((key) =>
           button(
             `${key === 'snapping' ? 'Magnetic alignment' : 'Edge auto-pan'}: ${editingPolicy[key] ? 'on' : 'off'}`,
-            () => setEditingPolicy((policy) => ({ ...policy, [key]: !policy[key] }))
+            () =>
+              setEditingPolicy((policy) => ({
+                ...policy,
+                [key]: !policy[key],
+              }))
           )
         )}
       </View>
@@ -302,7 +313,10 @@ export function BuildingPlanCanvas({
       <View
         accessibilityLabel="Building plan canvas"
         onLayout={(event) => {
-          bounds.current = { width: event.nativeEvent.layout.width, height: 320 };
+          bounds.current = {
+            width: event.nativeEvent.layout.width,
+            height: 320,
+          };
           setWidth(bounds.current.width);
         }}
         {...responder.panHandlers}
@@ -337,15 +351,43 @@ export function BuildingPlanCanvas({
                 </SvgText>
               </G>
             ))}
-            {scene.walls.map((wall) => (
-              <Polyline
-                key={wall.id}
-                points={wall.points.map((p) => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke={theme.color.foreground}
-                strokeWidth={3 / viewport.scale}
+            {scene.wallFootprints && (
+              <Path
+                d={scene.wallFootprints
+                  .flatMap((wall) =>
+                    wall.polygons.map(
+                      (polygon) => `M${polygon.map((p) => `${p.x},${p.y}`).join(' L')} Z`
+                    )
+                  )
+                  .join(' ')}
+                fill={theme.color.foreground}
               />
+            )}
+            {scene.wallFootprints?.map((wall) => (
+              <G key={wall.id}>
+                {wall.schematicSegments.map((segment) => (
+                  <Polyline
+                    key={segment.id}
+                    points={segment.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                    fill="none"
+                    stroke={theme.color.foreground}
+                    strokeDasharray="4 3"
+                    strokeWidth={1 / viewport.scale}
+                  />
+                ))}
+              </G>
             ))}
+            {scene.walls
+              .filter((wall) => !scene.wallFootprints || interaction.selection?.id === wall.id)
+              .map((wall) => (
+                <Polyline
+                  key={wall.id}
+                  points={wall.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke={theme.color.primary}
+                  strokeWidth={2 / viewport.scale}
+                />
+              ))}
             {scene.columns.map((column) => {
               const room = scene.rooms.find((room) => room.id === column.roomId);
               const center = point(room, column.centerU, column.centerV);
@@ -388,24 +430,27 @@ export function BuildingPlanCanvas({
                 />
               );
             })}
-            {['doors', 'windows'].flatMap((collection) =>
-              scene[collection].map((opening) => {
-                const wall = scene.walls.find((wall) => wall.id === opening.wallId);
-                const start = wall.points[opening.segmentIndex],
-                  end = wall.points[opening.segmentIndex + 1];
-                return (
-                  <Line
-                    key={opening.id}
-                    x1={start.x + (end.x - start.x) * opening.startRatio}
-                    y1={start.y + (end.y - start.y) * opening.startRatio}
-                    x2={start.x + (end.x - start.x) * opening.endRatio}
-                    y2={start.y + (end.y - start.y) * opening.endRatio}
-                    stroke={collection === 'doors' ? '#2b8a3e' : '#1c7ed6'}
-                    strokeWidth={6 / viewport.scale}
-                  />
-                );
-              })
-            )}
+            {scene.physicalOpenings?.map((opening) => {
+              const color = opening.kind === 'doors' ? '#2b8a3e' : '#1c7ed6';
+              return opening.polygon.length ? (
+                <Polygon
+                  key={opening.id}
+                  points={opening.polygon.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill={color}
+                />
+              ) : (
+                <Line
+                  key={opening.id}
+                  x1={opening.points[0].x}
+                  y1={opening.points[0].y}
+                  x2={opening.points[1].x}
+                  y2={opening.points[1].y}
+                  stroke={color}
+                  strokeWidth={3 / viewport.scale}
+                  strokeDasharray="4 3"
+                />
+              );
+            })}
             {ghost?.type === 'room' && (
               <Rect
                 x={ghost.x}

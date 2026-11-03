@@ -82,6 +82,33 @@ test('touch movement previews without form writes and commits once at release', 
   assert.equal(f.focused(), 0);
   assert.equal(f.controller.getSnapshot().rooms[0].rect.x, 20);
 });
+
+test('touch selects the active room projection at the centre of a thick shared opening', async () => {
+  const f = fixture(true);
+  const initial = f.controller.getSnapshot();
+  const face = initial.walls.find(
+    (wall) => wall.roomId === initial.rooms[0].id && wall.index === 2
+  );
+  await f.controller.createDoor(face.id, { startRatio: 0.2, width: 0.9 });
+  const scene = f.controller.getSnapshot();
+  assert.equal(scene.physicalOpenings.length, 1);
+  const roomId = scene.rooms[1].id;
+  const projected = scene.doors.find((door) => door.roomId === roomId);
+  const physical = scene.physicalOpenings[0];
+  const center = {
+    x: (physical.points[0].x + physical.points[1].x) / 2,
+    y: (physical.points[0].y + physical.points[1].y) / 2,
+  };
+  const touch = createBuildingPlanTouchController({
+    controller: f.controller,
+    scopeRoomId: () => roomId,
+  });
+  touch.setViewport({ x: 0, y: 0, scale: 4 });
+  const hit = touch.hitTest({ x: center.x * 4, y: center.y * 4 });
+  assert.equal(hit.collection, 'doors');
+  assert.equal(hit.item.id, projected.id);
+  assert.equal(hit.item.roomId, roomId);
+});
 test('touch termination discards the complete preview without committing or navigating', () => {
   const f = fixture();
   const before = f.record();
@@ -208,6 +235,9 @@ for (const remove of [false, true])
     await f.touch.end([{ x: 100, y: 150 }]);
     assert.equal(prompts, 1);
     assert.equal(f.commits(), remove ? 2 : 1);
-    const plan = readBuildingPlanRecord({ meta: f.controller.meta, record: f.record() });
+    const plan = readBuildingPlanRecord({
+      meta: f.controller.meta,
+      record: f.record(),
+    });
     assert.equal(plan.floors[0].walls.flatMap((w) => w.doors).length, remove ? 0 : 1);
   });

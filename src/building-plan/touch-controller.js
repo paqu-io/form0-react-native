@@ -60,12 +60,22 @@ export function createBuildingPlanTouchController({
   const roomOf = (id) => snapshot().rooms.find((room) => room.id === id);
   function wallAt(point) {
     const hits = [];
-    for (const wall of snapshot().walls.filter(
+    const view = snapshot();
+    for (const wall of view.walls.filter(
       (wall) => scopeRoomId() == null || wall.roomId === scopeRoomId()
     ))
       for (let i = 0; i < wall.points.length - 1; i++) {
         const hit = projection(point, wall.points[i], wall.points[i + 1]);
-        if (hit.distance <= 14 / viewport.scale)
+        const material = view.wallFootprints?.find((entry) => entry.id === wall.physicalWallId);
+        const a = wall.points[i],
+          b = wall.points[i + 1];
+        const along = (point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y);
+        if (
+          hit.distance <= 14 / viewport.scale ||
+          (along >= 0 &&
+            along <= length(a, b) ** 2 &&
+            material?.polygons.some((p) => inside(point, p)))
+        )
           hits.push({
             collection: 'walls',
             item: wall,
@@ -82,8 +92,9 @@ export function createBuildingPlanTouchController({
         (item) => scopeRoomId() == null || item.roomId === scopeRoomId()
       )) {
         const wall = view.walls.find((wall) => wall.id === item.wallId);
-        const start = wall?.points[item.segmentIndex],
-          end = wall?.points[item.segmentIndex + 1];
+        const points = item.physical && wall?.axisPoints ? wall.axisPoints : wall?.points;
+        const start = points?.[item.segmentIndex],
+          end = points?.[item.segmentIndex + 1];
         if (
           start &&
           end &&
@@ -92,7 +103,7 @@ export function createBuildingPlanTouchController({
             segmentPoint(start, end, item.startRatio),
             segmentPoint(start, end, item.endRatio)
           ).distance <
-            14 / viewport.scale
+            14 / viewport.scale + ((item.physical?.thickness || 0) * controller.gridSize) / 2
         )
           return { collection, item };
       }
@@ -197,7 +208,9 @@ export function createBuildingPlanTouchController({
                 ((ratio - item.startRatio) * length(...segment)) / controller.gridSize
               ),
             }
-          : { startRatio: Math.max(0, Math.min(1 - (item.endRatio - item.startRatio), ratio)) },
+          : {
+              startRatio: Math.max(0, Math.min(1 - (item.endRatio - item.startRatio), ratio)),
+            },
     };
   }
   function applyElementEdit(edit, preview) {
@@ -408,7 +421,11 @@ export function createBuildingPlanTouchController({
         return;
       const delta = controller.interaction.edgePan(lastTouches[0], bounds, now);
       if (!delta.x && !delta.y) return;
-      viewport = { ...viewport, x: viewport.x + delta.x, y: viewport.y + delta.y };
+      viewport = {
+        ...viewport,
+        x: viewport.x + delta.x,
+        y: viewport.y + delta.y,
+      };
       onViewport({ ...viewport });
       move(lastTouches);
     },
