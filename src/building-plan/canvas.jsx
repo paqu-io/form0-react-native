@@ -49,14 +49,20 @@ export function BuildingPlanCanvas({
   const [mode, setMode] = useState('select');
   const [width, setWidth] = useState(320);
   const [issues, setIssues] = useState([]);
+  const [editingPolicy, setEditingPolicy] = useState({ snapping: true, edgeAutoPan: true });
+  const policyRef = useRef(editingPolicy);
+  policyRef.current = editingPolicy;
   const [dimensions, setDimensions] = useState({ width: '', height: '' });
   const runtime = useRef(null);
   const frame = useRef(null);
+  const edgeFrame = useRef(null);
+  const bounds = useRef({ width: 320, height: 320 });
   const pendingTouch = useRef(null);
   useEffect(() => {
     if (!meta) return;
     const controller = new BuildingPlanCanvasController({
       meta,
+      editingPolicy: policyRef.current,
       readRecord: () => current.current.context?.editor.getRecord() || current.current.record,
       writeRecord: (_next, { operation }) =>
         current.current.context?.editor.apply(operation, {
@@ -103,6 +109,8 @@ export function BuildingPlanCanvas({
     });
     return () => {
       if (frame.current != null) cancelAnimationFrame(frame.current);
+      if (edgeFrame.current != null) cancelAnimationFrame(edgeFrame.current);
+      touch.cancel();
       unsubscribe?.();
       release();
       controller.dispose();
@@ -113,6 +121,9 @@ export function BuildingPlanCanvas({
     runtime.current?.controller.syncFromState();
     runtime.current?.controller.emitUpdate();
   }, [record]);
+  useEffect(() => {
+    runtime.current?.controller.setEditingPolicy(editingPolicy);
+  }, [editingPolicy]);
   const touches = (event) => {
     const raw = event.nativeEvent.touches?.length
       ? event.nativeEvent.touches
@@ -122,37 +133,52 @@ export function BuildingPlanCanvas({
       y: touch.locationY,
     }));
   };
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onShouldBlockNativeResponder: () => true,
-        onPanResponderGrant: (event) => runtime.current?.touch.begin(touches(event)),
-        onPanResponderMove: (event) => {
-          pendingTouch.current = touches(event);
-          if (frame.current == null)
-            frame.current = requestAnimationFrame(() => {
-              frame.current = null;
-              runtime.current?.touch.move(pendingTouch.current);
-            });
-        },
-        onPanResponderRelease: (event) => {
-          if (frame.current != null) cancelAnimationFrame(frame.current);
-          frame.current = null;
-          runtime.current?.touch
-            .end(touches(event))
-            .catch((error) => setIssues([{ message: error.message }]));
-        },
-        onPanResponderTerminate: () => {
-          if (frame.current != null) cancelAnimationFrame(frame.current);
-          frame.current = null;
-          runtime.current?.touch.cancel();
-        },
-      }),
-    []
-  );
+  const responder = useMemo(() => {
+    const stopEdgePan = () => {
+      if (edgeFrame.current != null) cancelAnimationFrame(edgeFrame.current);
+      edgeFrame.current = null;
+    };
+    const panFrame = (now) => {
+      edgeFrame.current = null;
+      const touch = runtime.current?.touch;
+      if (!touch?.isActive()) return;
+      touch.tick(bounds.current, now);
+      edgeFrame.current = requestAnimationFrame(panFrame);
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: (event) => {
+        runtime.current?.touch.begin(touches(event));
+        stopEdgePan();
+        edgeFrame.current = requestAnimationFrame(panFrame);
+      },
+      onPanResponderMove: (event) => {
+        pendingTouch.current = touches(event);
+        if (frame.current == null)
+          frame.current = requestAnimationFrame(() => {
+            frame.current = null;
+            runtime.current?.touch.move(pendingTouch.current);
+          });
+      },
+      onPanResponderRelease: (event) => {
+        stopEdgePan();
+        if (frame.current != null) cancelAnimationFrame(frame.current);
+        frame.current = null;
+        runtime.current?.touch
+          .end(touches(event))
+          .catch((error) => setIssues([{ message: error.message }]));
+      },
+      onPanResponderTerminate: () => {
+        stopEdgePan();
+        if (frame.current != null) cancelAnimationFrame(frame.current);
+        frame.current = null;
+        runtime.current?.touch.cancel();
+      },
+    });
+  }, []);
   const selectedRoom =
     interaction.selection?.collection === 'rooms'
       ? scene.rooms.find((room) => room.id === interaction.selection.id)
@@ -238,6 +264,12 @@ export function BuildingPlanCanvas({
           })
         )}
         {button('Reset view', () => runtime.current?.touch.setViewport({ x: 20, y: 20, scale: 1 }))}
+        {['snapping', 'edgeAutoPan'].map((key) =>
+          button(
+            `${key === 'snapping' ? 'Magnetic alignment' : 'Edge auto-pan'}: ${editingPolicy[key] ? 'on' : 'off'}`,
+            () => setEditingPolicy((policy) => ({ ...policy, [key]: !policy[key] }))
+          )
+        )}
       </View>
       {scene.floors.length > 1 && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -253,7 +285,10 @@ export function BuildingPlanCanvas({
       )}
       <View
         accessibilityLabel="Building plan canvas"
-        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+        onLayout={(event) => {
+          bounds.current = { width: event.nativeEvent.layout.width, height: 320 };
+          setWidth(bounds.current.width);
+        }}
         {...responder.panHandlers}
         style={{
           height: 320,
@@ -309,6 +344,18 @@ export function BuildingPlanCanvas({
                 />
               );
             })}
+            {(scene.guides || []).map((guide, index) => (
+              <Line
+                key={`guide-${index}`}
+                x1={guide.from.x}
+                y1={guide.from.y}
+                x2={guide.to.x}
+                y2={guide.to.y}
+                stroke={theme.color.primary}
+                strokeWidth={1.5 / viewport.scale}
+                strokeDasharray="5,4"
+              />
+            ))}
             {scene.beams.map((beam) => {
               const room = scene.rooms.find((room) => room.id === beam.roomId);
               const start = point(room, beam.startU, beam.startV),
@@ -408,7 +455,7 @@ export function BuildingPlanCanvas({
       )}
       {issues.length > 0 && (
         <Text accessibilityRole="alert" style={{ color: theme.color.error }}>
-          {issues.map((issue) => issue.message).join(' ')}
+          {issues[0].message}
         </Text>
       )}
     </View>

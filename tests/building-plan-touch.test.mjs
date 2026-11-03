@@ -156,3 +156,32 @@ test('structural touch edits render their full preview before the single accepte
   assert.equal(f.controller.getSnapshot().columns[0].centerU, 0.6);
   assert.equal(f.commits(), 2);
 });
+
+test('touch edge pan keeps the pointer location live and commits the entire drag once', async () => {
+  const f = fixture();
+  f.controller.setEditingPolicy({ snapping: false });
+  const before = f.record();
+  f.touch.begin([{ x: 80, y: 70 }]);
+  f.touch.move([{ x: 118, y: 70 }]);
+  for (let now = 0; now <= 320; now += 16) f.touch.tick({ width: 120, height: 160 }, now);
+  assert.ok(f.touch.getViewport().x < 20);
+  assert.deepEqual(f.record(), before);
+  assert.equal(f.commits(), 0);
+  const viewport = f.touch.getViewport();
+  await f.touch.end();
+  assert.equal(f.commits(), 1);
+  assert.deepEqual(f.touch.getViewport(), viewport, 'Release must not recenter the viewport');
+  f.touch.tick({ width: 120, height: 160 }, 500);
+  assert.deepEqual(f.touch.getViewport(), viewport);
+});
+
+test('touch snapping and edge pan can be disabled independently', async () => {
+  const f = fixture();
+  f.controller.setEditingPolicy({ snapping: false, edgeAutoPan: false });
+  f.touch.begin([{ x: 80, y: 70 }]);
+  f.touch.move([{ x: 85, y: 70 }]);
+  for (let now = 0; now <= 320; now += 16) f.touch.tick({ width: 90, height: 160 }, now);
+  assert.equal(f.touch.getViewport().x, 20);
+  await f.touch.end();
+  assert.equal(f.controller.getSnapshot().rooms[0].rect.x, 5);
+});
