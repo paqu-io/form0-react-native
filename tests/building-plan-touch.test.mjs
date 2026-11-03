@@ -5,6 +5,7 @@ import {
   createBuildingPlanSession,
   expandBuildingPlanSchema,
   writeBuildingPlanRecord,
+  readBuildingPlanRecord,
 } from 'form0-core';
 import { createBuildingPlanTouchController } from '../src/building-plan/touch-controller.js';
 
@@ -185,3 +186,28 @@ test('touch snapping and edge pan can be disabled independently', async () => {
   await f.touch.end();
   assert.equal(f.controller.getSnapshot().rooms[0].rect.x, 5);
 });
+
+for (const remove of [false, true])
+  test(`touch opening cut confirms only on release and ${remove ? 'removes' : 'preserves'} the opening`, async () => {
+    const f = fixture(true);
+    const first = f.controller.getSnapshot().rooms[0];
+    const face = f.controller
+      .getSnapshot()
+      .walls.find((w) => w.roomId === first.id && w.points[0].y === 80 && w.points[1].y === 80);
+    await f.controller.createDoor(face.id, { startRatio: 0.1, width: 0.9 });
+    let prompts = 0;
+    f.controller.confirmOpeningRemoval = () => {
+      prompts++;
+      return remove;
+    };
+    const before = f.record();
+    f.touch.begin([{ x: 80, y: 150 }]);
+    f.touch.move([{ x: 100, y: 150 }]);
+    assert.equal(prompts, 0);
+    assert.deepEqual(f.record(), before);
+    await f.touch.end([{ x: 100, y: 150 }]);
+    assert.equal(prompts, 1);
+    assert.equal(f.commits(), remove ? 2 : 1);
+    const plan = readBuildingPlanRecord({ meta: f.controller.meta, record: f.record() });
+    assert.equal(plan.floors[0].walls.flatMap((w) => w.doors).length, remove ? 0 : 1);
+  });

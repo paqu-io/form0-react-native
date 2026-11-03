@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, PanResponder, TextInput } from 'react-native';
+import { View, Pressable, PanResponder, TextInput, Alert } from 'react-native';
 import Svg, { G, Polygon, Polyline, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { BuildingPlanCanvasController } from 'form0-core';
 import { useTheme } from '../theme-context.jsx';
@@ -63,6 +63,22 @@ export function BuildingPlanCanvas({
     const controller = new BuildingPlanCanvasController({
       meta,
       editingPolicy: policyRef.current,
+      confirmOpeningRemoval: (issue) =>
+        new Promise((resolve) =>
+          Alert.alert(
+            'Opening conflict',
+            `${issue.message}${issue.observationIds.length ? ` This also deletes ${issue.observationIds.length} associated observation(s).` : ''}`,
+            [
+              { text: 'Keep previous layout', style: 'cancel', onPress: () => resolve(false) },
+              {
+                text: 'Keep position and remove',
+                style: 'destructive',
+                onPress: () => resolve(true),
+              },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) }
+          )
+        ),
       readRecord: () => current.current.context?.editor.getRecord() || current.current.record,
       writeRecord: (_next, { operation }) =>
         current.current.context?.editor.apply(operation, {
