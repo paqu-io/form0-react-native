@@ -77,6 +77,39 @@ function fixture(shared = false) {
     focused: () => focused,
   };
 }
+for (const axis of ['x', 'y'])
+  test(`touch realigns a split boundary with its stationary extension before Rejoin (${axis})`, async () => {
+    const f = fixture();
+    const initial = f.controller.getSnapshot();
+    const wall = initial.walls.find((wall) => wall.index === (axis === 'x' ? 3 : 0));
+    await f.controller.splitWall(wall.id, { offset: axis === 'x' ? 2 : 2.5 });
+    const split = f.controller.getSnapshot();
+    const touch = createBuildingPlanTouchController({
+      controller: f.controller,
+      scopeRoomId: () => initial.rooms[0].id,
+    });
+    touch.setViewport({ x: 0, y: 0, scale: 1 });
+    f.controller.setEditingPolicy({ snapping: false, edgeAutoPan: false });
+    const start = axis === 'x' ? { x: 0, y: 60 } : { x: 25, y: 0 };
+    const moved = axis === 'x' ? { x: 12, y: 60 } : { x: 25, y: 12 };
+    const near = axis === 'x' ? { x: 2, y: 60 } : { x: 25, y: 2 };
+    touch.begin([start]);
+    touch.move([moved]);
+    await touch.end([moved]);
+    f.controller.setEditingPolicy({ snapping: true, edgeAutoPan: false });
+    touch.begin([moved]);
+    touch.move([near]);
+    await touch.end([near]);
+    assert.deepEqual(f.controller.getSnapshot().rooms[0].vertices, split.rooms[0].vertices);
+    touch.setMode('rejoin');
+    const node = axis === 'x' ? { x: 0, y: 40 } : { x: 50, y: 0 };
+    touch.begin([node]);
+    await touch.end([node]);
+    assert.equal(f.controller.getSnapshot().rooms[0].vertices.length, 4);
+    assert.equal(f.commits(), 4);
+    assert.equal(f.focused(), 0);
+    f.controller.dispose();
+  });
 test('touch movement previews without form writes and commits once at release', async () => {
   const f = fixture();
   const before = f.record();

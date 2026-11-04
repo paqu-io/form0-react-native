@@ -2341,7 +2341,7 @@ function FormRendererContent({
                     room: 'room default',
                     physical_wall: 'this wall',
                     room_face: 'this room side',
-                    construction_segment: 'this construction segment',
+                    construction_segment: 'this wall portion',
                     schema: 'form default',
                   }[planField.source.scope] || planField.source.scope}
                 </Text>

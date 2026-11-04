@@ -4,10 +4,11 @@ import { afterEach, expect, it } from 'vitest';
 import {
   createBuildingPlanSession,
   expandBuildingPlanSchema,
+  readBuildingPlanRecord,
   writeBuildingPlanRecord,
 } from 'form0-core';
 
-function fixture(withRoom = false) {
+function fixture(withRoom = false, withCut = false) {
   const schema = {
     form: {
       name: 'Building',
@@ -44,7 +45,19 @@ function fixture(withRoom = false) {
       type: 'create_room',
       floorId: domain.getSnapshot().floors[0].id,
       rectangle: { x: 0, y: 0, width: 5, height: 3 },
+      ...(withCut
+        ? { values: { room_name: { choice: [{ value: 'bedroom', label: 'Bedroom' }], other: [] } } }
+        : {}),
     });
+  if (withCut) {
+    const floor = domain.getSnapshot().floors[0];
+    domain.apply({
+      type: 'split_face',
+      floorId: floor.id,
+      faceId: floor.rooms[0].faces[0].id,
+      offset: 2.5,
+    });
+  }
   const record = writeBuildingPlanRecord({ meta, plan: domain.getSnapshot() });
   return { schema, meta, record };
 }
@@ -52,6 +65,69 @@ function fixture(withRoom = false) {
 /** Platform-adapter editor proof. Actual touch and Hermes/device acceptance are separate. */
 export function runBuildingPlanEditorTests(FormRenderer) {
   afterEach(cleanup);
+  for (const security of ['trusted', 'safe'])
+    it(`Native uses the existing thickness field for a split portion through normal Save controls (${security})`, async () => {
+      const { schema, meta, record } = fixture(true, true);
+      let latest;
+      render(
+        <FormRenderer
+          schema={schema}
+          mode="edit"
+          repeatableEntryMode="edit"
+          initialSnapshot={{ raw_values: {}, repeatable: record.repeatable }}
+          engineOptions={{
+            events: { recordKind: 'existing' },
+            security: { mode: security },
+            diagnostics: { console: false },
+          }}
+          onSnapshotChange={(snapshot) => {
+            latest = snapshot;
+          }}
+        />
+      );
+      for (let level = 0; level < 3; level++)
+        fireEvent.click(await screen.findByRole('button', { name: 'View', exact: true }));
+      const rooms = screen.getByText('Rooms', { exact: true }).closest('div').parentElement;
+      fireEvent.click(within(rooms).getByRole('button', { name: 'View', exact: true }));
+      await screen.findByText('Rooms 1');
+      fireEvent.click(screen.getAllByRole('button', { name: 'View', exact: true }).at(-1));
+      const walls = (await screen.findByText('Walls', { exact: true })).closest(
+        'div'
+      ).parentElement;
+      fireEvent.click(within(walls).getByRole('button', { name: 'View', exact: true }));
+      await screen.findByText('Walls 5');
+      fireEvent.click(screen.getAllByRole('button', { name: 'View', exact: true })[0]);
+      const name =
+        meta.repeatablesByNodeKey.walls.fieldsByOriginalDataName.wall_thickness_m.dataName;
+      const input = await waitFor(() => {
+        const fields = document.querySelectorAll(`input[name="${name}"]`);
+        expect(fields.length).toBe(1);
+        return fields[0];
+      });
+      fireEvent.change(input, { target: { value: '0.4' } });
+      await screen.findByText(/this wall portion/);
+      fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+      await screen.findByText('Walls 5');
+      fireEvent.click(await screen.findByRole('button', { name: 'Back', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+      await screen.findByText('Rooms 1');
+      fireEvent.click(await screen.findByRole('button', { name: 'Back', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+      await waitFor(() => {
+        const floor = readBuildingPlanRecord({
+          meta,
+          record: { values: {}, repeatable: latest.repeatable },
+        }).floors[0];
+        expect(floor.walls.length).toBe(4);
+        expect(
+          floor.walls.some(
+            (wall) =>
+              wall.properties.wall_thickness_m === 0.2 &&
+              wall.segments.some((segment) => segment.overrides?.wall_thickness_m === 0.4)
+          )
+        ).toBe(true);
+      });
+    });
   for (const security of ['trusted', 'safe'])
     it(`Native Split/Rejoin commands stay in the existing room editor without dirtying geometry (${security})`, async () => {
       const { schema, record } = fixture(true);
