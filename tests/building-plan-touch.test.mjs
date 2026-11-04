@@ -8,6 +8,13 @@ import {
   readBuildingPlanRecord,
 } from 'form0-core';
 import { createBuildingPlanTouchController } from '../src/building-plan/touch-controller.js';
+const contains = (point, polygon) => {
+  const sides = polygon.map((a, i) => {
+    const b = polygon[(i + 1) % polygon.length];
+    return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+  });
+  return sides.every((value) => value >= -1e-6) || sides.every((value) => value <= 1e-6);
+};
 
 function fixture(shared = false) {
   const { buildingPlanMeta } = expandBuildingPlanSchema({
@@ -81,6 +88,53 @@ test('touch movement previews without form writes and commits once at release', 
   assert.equal(f.commits(), 1);
   assert.equal(f.focused(), 0);
   assert.equal(f.controller.getSnapshot().rooms[0].rect.x, 20);
+});
+
+test('touch jog creation shares the existing adjacent physical wall with one thickness', async () => {
+  const f = fixture(true),
+    initial = f.controller.getSnapshot();
+  f.controller.setEditingPolicy({ snapping: false, edgeAutoPan: false });
+  const touch = createBuildingPlanTouchController({
+    controller: f.controller,
+    scopeRoomId: () => initial.rooms[0].id,
+  });
+  touch.setViewport({ x: 0, y: 0, scale: 1 });
+  const right = initial.walls.find(
+    (w) => w.roomId === initial.rooms[0].id && w.index === 1
+  ).physicalWallId;
+  touch.begin([{ x: 40, y: 80 }]);
+  touch.move([{ x: 40, y: 92 }]);
+  await touch.end([{ x: 40, y: 92 }]);
+  const scene = f.controller.getSnapshot(),
+    footprint = scene.wallFootprints.find((w) => w.id === right);
+  assert.ok(
+    scene.walls.some((w) => w.roomId === initial.rooms[1].id && w.physicalWallId === right)
+  );
+  assert.ok(footprint.polygons.some((p) => contains({ x: 102, y: 88 }, p)));
+  assert.ok(
+    !scene.wallFootprints.some((w) => w.polygons.some((p) => contains({ x: 98, y: 88 }, p)))
+  );
+  assert.equal(f.commits(), 1);
+});
+
+test('touch room detachment trims the unbound stationary wall extent', async () => {
+  const f = fixture(true),
+    initial = f.controller.getSnapshot();
+  f.controller.setEditingPolicy({ snapping: false, edgeAutoPan: false });
+  const wallId = initial.walls.find(
+    (w) => w.roomId === initial.rooms[0].id && w.index === 2
+  ).physicalWallId;
+  f.touch.setViewport({ x: 0, y: 0, scale: 1 });
+  f.touch.begin([{ x: 40, y: 40 }]);
+  f.touch.move([{ x: -160, y: 40 }]);
+  await f.touch.end([{ x: -160, y: 40 }]);
+  const plan = readBuildingPlanRecord({
+    meta: f.controller.meta,
+    record: f.record(),
+  });
+  const wall = plan.floors[0].walls.find((w) => w.id === wallId);
+  assert.deepEqual([wall.segments[0].start.x, wall.segments[0].end.x], [8, 3]);
+  assert.equal(f.commits(), 1);
 });
 
 test('touch selects the active room projection at the centre of a thick shared opening', async () => {
