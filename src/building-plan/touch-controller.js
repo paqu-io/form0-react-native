@@ -167,7 +167,7 @@ export function createBuildingPlanTouchController({
               },
       };
     if (collection === 'walls') {
-      if (item.isBoundary) {
+      if (item.isBoundary || item.isCutPortion) {
         const a = item.points[0],
           b = item.points[item.points.length - 1];
         const size = length(a, b);
@@ -177,21 +177,27 @@ export function createBuildingPlanTouchController({
         delta.y = normal.y * distance;
       }
       const points = item.points.map((point, index) =>
-        mode === 'resize' && !item.isBoundary && index !== item.points.length - 1
+        mode === 'resize' &&
+        !item.isBoundary &&
+        !item.isCutPortion &&
+        index !== item.points.length - 1
           ? point
           : { x: point.x + delta.x, y: point.y + delta.y }
       );
       return {
         collection,
         id: item.id,
-        points: item.isBoundary
-          ? controller.interaction.snapTranslation(points, {
-              roomId: item.roomId,
-              physicalWallId: item.physicalWallId,
-              zoom: viewport.scale,
-              originalPoints: item.points,
-            })
-          : points,
+        points:
+          item.isBoundary || item.isCutPortion
+            ? controller.interaction.snapTranslation(points, {
+                roomId: item.roomId,
+                physicalWallId: item.physicalWallId,
+                editingGroupId: item.isCutPortion ? item.editingGroupId : null,
+                faceId: item.id,
+                zoom: viewport.scale,
+                originalPoints: item.points,
+              })
+            : points,
       };
     }
     const wall = controller.walls.get(item.wallId);
@@ -235,7 +241,12 @@ export function createBuildingPlanTouchController({
     controller.clearPreview({ clearIssues: true });
     controller.interaction.begin();
     const start = world(touches[0]);
-    const hit = mode === 'select' || mode === 'resize' ? hitTest(start) : null;
+    const hit =
+      mode === 'select' || mode === 'resize'
+        ? hitTest(start)
+        : mode === 'split' || mode === 'rejoin'
+          ? wallAt(start)
+          : null;
     if (hit) selection = { collection: hit.collection, id: hit.item.id };
     gesture = {
       start,
@@ -248,7 +259,15 @@ export function createBuildingPlanTouchController({
     };
     if (touches.length > 1 || mode === 'pan') gesture.pan = true;
     draft = null;
+    if ((mode === 'split' || mode === 'rejoin') && canEdit(hit))
+      draft = { type: 'cut', command: mode, placement: cutPlacement(start) };
     notify();
+  }
+  function cutPlacement(point) {
+    return controller[mode === 'split' ? 'getCutPlacement' : 'getJoinPlacement'](point, {
+      roomId: scopeRoomId(),
+      zoom: viewport.scale,
+    });
   }
   function move(touches) {
     if (!gesture || !touches.length) return;
@@ -281,6 +300,11 @@ export function createBuildingPlanTouchController({
     }
     let end = world(touch);
     gesture.moved ||= length(touch, gesture.screenStart) > 4;
+    if ((mode === 'split' || mode === 'rejoin') && canEdit(gesture.hit)) {
+      draft = { type: 'cut', command: mode, placement: cutPlacement(end) };
+      notify();
+      return;
+    }
     if (!canEdit(gesture.hit) || !gesture.moved) return;
     if (
       ['room', 'wall', 'beam'].includes(mode) ||
@@ -361,7 +385,13 @@ export function createBuildingPlanTouchController({
           controller.focus(current.hit.collection, current.hit.item.id);
         return;
       }
-      if (pending?.type === 'room' && pending.width > 4 && pending.height > 4)
+      if (pending?.type === 'cut') {
+        const target = pending.placement;
+        if (target)
+          await (pending.command === 'split'
+            ? controller.splitWall(target.wallId, { offset: target.offset })
+            : controller.rejoinCut(target.id));
+      } else if (pending?.type === 'room' && pending.width > 4 && pending.height > 4)
         await created('rooms', controller.createRoom(pending));
       else if (pending?.type === 'room-edit')
         await controller.updateRoom(pending.roomId, pending.rect);

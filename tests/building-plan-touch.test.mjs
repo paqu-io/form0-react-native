@@ -137,6 +137,56 @@ test('touch room detachment trims the unbound stationary wall extent', async () 
   assert.equal(f.commits(), 1);
 });
 
+test('touch Split previews a node, commits on release, cancels cleanly and Rejoins without row navigation', async () => {
+  const f = fixture(true);
+  f.controller.setEditingPolicy({ snapping: false });
+  f.touch.setViewport({ x: 0, y: 0, scale: 1 });
+  f.touch.setMode('split');
+  f.touch.begin([{ x: 80, y: 80 }]);
+  f.touch.move([{ x: 70, y: 80 }]);
+  assert.equal(f.commits(), 0);
+  f.touch.cancel();
+  assert.equal(f.commits(), 0);
+  f.touch.begin([{ x: 70, y: 80 }]);
+  await f.touch.end([{ x: 70, y: 80 }]);
+  assert.equal(f.commits(), 1);
+  assert.ok(f.controller.getSnapshot().editingCuts.length >= 2);
+  assert.equal(f.focused(), 0);
+  f.touch.setMode('rejoin');
+  f.touch.begin([{ x: 70, y: 80 }]);
+  await f.touch.end([{ x: 70, y: 80 }]);
+  assert.equal(f.commits(), 2);
+  assert.equal(f.controller.getSnapshot().editingCuts.length, 0);
+});
+
+test('touch moves only a cut partition portion and magnetically straightens it before Rejoin', async () => {
+  const f = fixture(true);
+  f.touch.setViewport({ x: 0, y: 0, scale: 1 });
+  const roomId = f.controller.getSnapshot().rooms[0].id;
+  const partition = await f.controller.createWall(roomId, [
+    { x: 20, y: 20 },
+    { x: 80, y: 20 },
+  ]);
+  await f.controller.splitWall(partition.id, { offset: 1 });
+  f.touch.begin([{ x: 60, y: 20 }]);
+  f.touch.move([{ x: 66, y: 32 }]);
+  await f.touch.end([{ x: 66, y: 32 }]);
+  assert.equal(f.commits(), 3);
+  assert.equal(f.controller.getSnapshot().walls.filter((wall) => !wall.isBoundary).length, 3);
+  f.touch.begin([{ x: 60, y: 32 }]);
+  f.touch.move([{ x: 60, y: 21 }]);
+  await f.touch.end([{ x: 60, y: 21 }]);
+  assert.equal(f.commits(), 4);
+  const straight = f.controller.getSnapshot().walls.filter((wall) => !wall.isBoundary);
+  assert.equal(straight.length, 2);
+  assert.ok(straight.every((wall) => wall.points.every((point) => point.y === 20)));
+  f.touch.setMode('rejoin');
+  f.touch.begin([{ x: 40, y: 20 }]);
+  await f.touch.end([{ x: 40, y: 20 }]);
+  assert.equal(f.commits(), 5);
+  assert.equal(f.controller.getSnapshot().walls.filter((wall) => !wall.isBoundary).length, 1);
+});
+
 test('touch selects the active room projection at the centre of a thick shared opening', async () => {
   const f = fixture(true);
   const initial = f.controller.getSnapshot();

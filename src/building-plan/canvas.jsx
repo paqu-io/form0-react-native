@@ -21,6 +21,8 @@ const TOOLS = [
   ['resize', 'Resize'],
   ['room', 'Room'],
   ['wall', 'Wall'],
+  ['split', 'Split'],
+  ['rejoin', 'Rejoin'],
   ['door', 'Door'],
   ['window', 'Window'],
   ['column', 'Column'],
@@ -56,6 +58,7 @@ export function BuildingPlanCanvas({
   const policyRef = useRef(editingPolicy);
   policyRef.current = editingPolicy;
   const [dimensions, setDimensions] = useState({ width: '', height: '' });
+  const [cutDistance, setCutDistance] = useState('');
   const runtime = useRef(null);
   const frame = useRef(null);
   const edgeFrame = useRef(null);
@@ -206,6 +209,20 @@ export function BuildingPlanCanvas({
     interaction.selection?.collection === 'rooms'
       ? scene.rooms.find((room) => room.id === interaction.selection.id)
       : null;
+  const selectedWall =
+    interaction.selection?.collection === 'walls'
+      ? scene.walls.find((wall) => wall.id === interaction.selection.id)
+      : null;
+  const selectedWallLength =
+    selectedWall?.points.length === 2
+      ? Math.hypot(
+          selectedWall.points[1].x - selectedWall.points[0].x,
+          selectedWall.points[1].y - selectedWall.points[0].y
+        ) / 32
+      : null;
+  useEffect(() => {
+    if (selectedWallLength != null) setCutDistance(String(selectedWallLength / 2));
+  }, [selectedWall?.id, selectedWallLength]);
   useEffect(() => {
     if (selectedRoom)
       setDimensions({
@@ -388,6 +405,38 @@ export function BuildingPlanCanvas({
                   strokeWidth={2 / viewport.scale}
                 />
               ))}
+            {mode === 'select' && selectedWallLength != null && (
+              <SvgText
+                x={selectedWall.points[0].x + 6 / viewport.scale}
+                y={selectedWall.points[0].y - 6 / viewport.scale}
+                fill={theme.color.primary}
+                fontSize={11 / viewport.scale}
+              >
+                0
+              </SvgText>
+            )}
+            {[
+              ...(scene.editingCuts || []),
+              ...(ghost?.type === 'cut' && ghost.placement ? [ghost.placement] : []),
+            ]
+              .filter(
+                (cut) =>
+                  !context ||
+                  context.editor.resolveRow(context.path).node.nodeKey !== 'rooms' ||
+                  cut.roomId === context.editor.resolveRow(context.path).model.id
+              )
+              .map((cut, index) => (
+                <Rect
+                  key={`cut-${index}`}
+                  x={cut.point.x - 4 / viewport.scale}
+                  y={cut.point.y - 4 / viewport.scale}
+                  width={8 / viewport.scale}
+                  height={8 / viewport.scale}
+                  fill={theme.color.background}
+                  stroke={theme.color.primary}
+                  strokeWidth={1.5 / viewport.scale}
+                />
+              ))}
             {scene.columns.map((column) => {
               const room = scene.rooms.find((room) => room.id === column.roomId);
               const center = point(room, column.centerU, column.centerV);
@@ -414,6 +463,17 @@ export function BuildingPlanCanvas({
                 strokeDasharray="5,4"
               />
             ))}
+            {ghost?.type === 'cut' && ghost.placement?.guide && (
+              <Line
+                x1={ghost.placement.guide.from.x}
+                y1={ghost.placement.guide.from.y}
+                x2={ghost.placement.guide.to.x}
+                y2={ghost.placement.guide.to.y}
+                stroke={theme.color.primary}
+                strokeWidth={1.5 / viewport.scale}
+                strokeDasharray="5,4"
+              />
+            )}
             {scene.beams.map((beam) => {
               const room = scene.rooms.find((room) => room.id === beam.roomId);
               const start = point(room, beam.startU, beam.startV),
@@ -514,6 +574,39 @@ export function BuildingPlanCanvas({
           )}
         </View>
       )}
+      {mode === 'select' &&
+        selectedWallLength != null &&
+        !readOnly &&
+        context &&
+        context.editor.resolveRow(context.path).node.nodeKey === 'rooms' && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <TextInput
+              accessibilityLabel="Split distance (m)"
+              keyboardType="decimal-pad"
+              value={cutDistance}
+              onChangeText={setCutDistance}
+              style={{
+                minWidth: 90,
+                minHeight: 44,
+                color: theme.color.foreground,
+                borderColor: theme.color.border,
+                borderWidth: 1,
+                padding: 8,
+              }}
+            />
+            {button('Split at distance', () =>
+              runtime.current?.controller.splitWall(selectedWall.id, {
+                offset: Number(cutDistance.replace(',', '.')),
+              })
+            )}
+          </View>
+        )}
+      {mode === 'split' && (
+        <Text>
+          Tap a wall to split it. Select a wall in Select mode to enter an exact distance.
+        </Text>
+      )}
+      {mode === 'rejoin' && <Text>Tap an editing node to rejoin aligned portions.</Text>}
       {issues.length > 0 && (
         <Text accessibilityRole="alert" style={{ color: theme.color.error }}>
           {issues[0].message}
