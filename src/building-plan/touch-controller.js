@@ -1,4 +1,4 @@
-import { buildingPlanPointFromViewport } from 'form0-core';
+import { buildingPlanPointFromViewport } from "form0-core";
 
 const length = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const segmentPoint = (a, b, ratio) => ({
@@ -10,7 +10,11 @@ const projection = (point, a, b) => {
   const ratio = size
     ? Math.max(
         0,
-        Math.min(1, ((point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y)) / (size * size))
+        Math.min(
+          1,
+          ((point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y)) /
+            (size * size),
+        ),
       )
     : 0;
   return {
@@ -42,11 +46,12 @@ export function createBuildingPlanTouchController({
   scopeRoomId = () => null,
 }) {
   let viewport = { x: 20, y: 20, scale: 1 };
-  let mode = 'select';
+  let mode = "select";
   let gesture = null;
   let selection = null;
   let draft = null;
   let lastTouches = [];
+  let freeCorners = false;
   const snapshot = () => controller.getSnapshot();
   const world = (point) => buildingPlanPointFromViewport(point, viewport);
   const notify = () => onChange({ selection, draft });
@@ -55,21 +60,25 @@ export function createBuildingPlanTouchController({
       .reverse()
       .find(
         (room) =>
-          (scopeRoomId() == null || room.id === scopeRoomId()) && inside(point, room.vertices)
+          (scopeRoomId() == null || room.id === scopeRoomId()) &&
+          inside(point, room.vertices),
       );
   const roomOf = (id) => snapshot().rooms.find((room) => room.id === id);
   function wallAt(point) {
     const hits = [];
     const view = snapshot();
     for (const wall of view.walls.filter(
-      (wall) => scopeRoomId() == null || wall.roomId === scopeRoomId()
+      (wall) => scopeRoomId() == null || wall.roomId === scopeRoomId(),
     ))
       for (let i = 0; i < wall.points.length - 1; i++) {
         const hit = projection(point, wall.points[i], wall.points[i + 1]);
-        const material = view.wallFootprints?.find((entry) => entry.id === wall.physicalWallId);
+        const material = view.wallFootprints?.find(
+          (entry) => entry.id === wall.physicalWallId,
+        );
         const a = wall.points[i],
           b = wall.points[i + 1];
-        const along = (point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y);
+        const along =
+          (point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y);
         if (
           hit.distance <= 14 / viewport.scale ||
           (along >= 0 &&
@@ -77,7 +86,7 @@ export function createBuildingPlanTouchController({
             material?.polygons.some((p) => inside(point, p)))
         )
           hits.push({
-            collection: 'walls',
+            collection: "walls",
             item: wall,
             segmentIndex: i,
             ...hit,
@@ -87,12 +96,20 @@ export function createBuildingPlanTouchController({
   }
   function hitTest(point) {
     const view = snapshot();
-    for (const collection of ['doors', 'windows'])
+    if (mode === "select") {
+      const corner = controller.getCornerPlacement?.(point, {
+        roomId: scopeRoomId(),
+        zoom: viewport.scale,
+      });
+      if (corner) return { collection: "corners", item: corner };
+    }
+    for (const collection of ["doors", "windows"])
       for (const item of view[collection].filter(
-        (item) => scopeRoomId() == null || item.roomId === scopeRoomId()
+        (item) => scopeRoomId() == null || item.roomId === scopeRoomId(),
       )) {
         const wall = view.walls.find((wall) => wall.id === item.wallId);
-        const points = item.physical && wall?.axisPoints ? wall.axisPoints : wall?.points;
+        const points =
+          item.physical && wall?.axisPoints ? wall.axisPoints : wall?.points;
         const start = points?.[item.segmentIndex],
           end = points?.[item.segmentIndex + 1];
         if (
@@ -101,15 +118,16 @@ export function createBuildingPlanTouchController({
           projection(
             point,
             segmentPoint(start, end, item.startRatio),
-            segmentPoint(start, end, item.endRatio)
+            segmentPoint(start, end, item.endRatio),
           ).distance <
-            14 / viewport.scale + ((item.physical?.thickness || 0) * controller.gridSize) / 2
+            14 / viewport.scale +
+              ((item.physical?.thickness || 0) * controller.gridSize) / 2
         )
           return { collection, item };
       }
-    for (const collection of ['columns', 'beams'])
+    for (const collection of ["columns", "beams"])
       for (const item of view[collection].filter(
-        (item) => scopeRoomId() == null || item.roomId === scopeRoomId()
+        (item) => scopeRoomId() == null || item.roomId === scopeRoomId(),
       )) {
         const room = roomOf(item.roomId);
         const convert = (u, v) => ({
@@ -117,29 +135,54 @@ export function createBuildingPlanTouchController({
           y: room.rect.y + v * room.rect.height,
         });
         const hit =
-          collection === 'columns'
+          collection === "columns"
             ? length(point, convert(item.centerU, item.centerV)) <
-              Math.max(14 / viewport.scale, (item.width * controller.gridSize) / 2)
-            : projection(point, convert(item.startU, item.startV), convert(item.endU, item.endV))
-                .distance <
+              Math.max(
+                14 / viewport.scale,
+                (item.width * controller.gridSize) / 2,
+              )
+            : projection(
+                point,
+                convert(item.startU, item.startV),
+                convert(item.endU, item.endV),
+              ).distance <
               14 / viewport.scale;
         if (hit) return { collection, item };
       }
     const wall = wallAt(point);
     if (wall) return wall;
     const room = roomAt(point);
-    return room && { collection: 'rooms', item: room };
+    return room && { collection: "rooms", item: room };
   }
   function elementEdit(current, end) {
     const { item, collection } = current.hit;
+    if (collection === "corners")
+      return {
+        collection,
+        id: item.id,
+        roomId: item.roomId,
+        point: controller.interaction.snapCorner(
+          {
+            x: item.point.x + end.x - current.start.x,
+            y: item.point.y + end.y - current.start.y,
+          },
+          {
+            roomId: item.roomId,
+            vertexId: item.id,
+            originalPoint: item.point,
+            zoom: viewport.scale,
+            bypass: freeCorners,
+          },
+        ),
+      };
     const room = roomOf(item.roomId);
     const delta = { x: end.x - current.start.x, y: end.y - current.start.y };
-    if (collection === 'columns')
+    if (collection === "columns")
       return {
         collection,
         id: item.id,
         values:
-          mode === 'resize'
+          mode === "resize"
             ? {
                 width: Math.abs(delta.x) / controller.gridSize,
                 height: Math.abs(delta.y) / controller.gridSize,
@@ -149,12 +192,12 @@ export function createBuildingPlanTouchController({
                 centerV: item.centerV + delta.y / room.rect.height,
               },
       };
-    if (collection === 'beams')
+    if (collection === "beams")
       return {
         collection,
         id: item.id,
         values:
-          mode === 'resize'
+          mode === "resize"
             ? {
                 endU: (end.x - room.rect.x) / room.rect.width,
                 endV: (end.y - room.rect.y) / room.rect.height,
@@ -166,74 +209,82 @@ export function createBuildingPlanTouchController({
                 endV: item.endV + delta.y / room.rect.height,
               },
       };
-    if (collection === 'walls') {
-      if (item.isBoundary || item.isCutPortion) {
-        const a = item.points[0],
-          b = item.points[item.points.length - 1];
-        const size = length(a, b);
-        const normal = { x: -(b.y - a.y) / size, y: (b.x - a.x) / size };
-        const distance = delta.x * normal.x + delta.y * normal.y;
-        delta.x = normal.x * distance;
-        delta.y = normal.y * distance;
-      }
+    if (collection === "walls") {
       const points = item.points.map((point, index) =>
-        mode === 'resize' &&
+        mode === "resize" &&
         !item.isBoundary &&
         !item.isCutPortion &&
         index !== item.points.length - 1
           ? point
-          : { x: point.x + delta.x, y: point.y + delta.y }
+          : { x: point.x + delta.x, y: point.y + delta.y },
       );
       return {
         collection,
         id: item.id,
         points:
           item.isBoundary || item.isCutPortion
-            ? controller.interaction.snapTranslation(points, {
+            ? controller.interaction.snapWallTranslation(points, {
+                perpendicular: item.isCutPortion && !item.isBoundary,
                 roomId: item.roomId,
                 physicalWallId: item.physicalWallId,
                 editingGroupId: item.isCutPortion ? item.editingGroupId : null,
                 faceId: item.id,
                 zoom: viewport.scale,
                 originalPoints: item.points,
+                bypass: freeCorners,
               })
             : points,
       };
     }
     const wall = controller.walls.get(item.wallId);
-    const segment = [wall.points[item.segmentIndex], wall.points[item.segmentIndex + 1]];
+    const segment = [
+      wall.points[item.segmentIndex],
+      wall.points[item.segmentIndex + 1],
+    ];
     const ratio = projection(end, ...segment).ratio;
     return {
       collection,
       id: item.id,
       values:
-        mode === 'resize'
+        mode === "resize"
           ? {
               width: Math.max(
                 0.1,
-                ((ratio - item.startRatio) * length(...segment)) / controller.gridSize
+                ((ratio - item.startRatio) * length(...segment)) /
+                  controller.gridSize,
               ),
             }
           : {
-              startRatio: Math.max(0, Math.min(1 - (item.endRatio - item.startRatio), ratio)),
+              startRatio: Math.max(
+                0,
+                Math.min(1 - (item.endRatio - item.startRatio), ratio),
+              ),
             },
     };
   }
   function applyElementEdit(edit, preview) {
-    if (edit.collection === 'walls')
-      return controller[preview ? 'previewWall' : 'updateWall'](edit.id, edit.points);
-    if (['columns', 'beams'].includes(edit.collection))
+    if (edit.collection === "corners")
+      return controller[preview ? "previewCorner" : "updateCorner"](
+        edit.roomId,
+        edit.id,
+        edit.point,
+      );
+    if (edit.collection === "walls")
+      return controller[preview ? "previewWall" : "updateWall"](
+        edit.id,
+        edit.points,
+      );
+    if (["columns", "beams"].includes(edit.collection))
       return preview
         ? controller.previewElement(edit.collection, edit.id, edit.values)
-        : controller[edit.collection === 'columns' ? 'updateColumn' : 'updateBeam'](
-            edit.id,
-            edit.values
-          );
+        : controller[
+            edit.collection === "columns" ? "updateColumn" : "updateBeam"
+          ](edit.id, edit.values);
     return preview
       ? controller.previewOpening(edit.collection, edit.id, edit.values)
-      : controller[edit.collection === 'doors' ? 'updateDoor' : 'updateWindow'](
+      : controller[edit.collection === "doors" ? "updateDoor" : "updateWindow"](
           edit.id,
-          edit.values
+          edit.values,
         );
   }
   function begin(touches) {
@@ -242,9 +293,9 @@ export function createBuildingPlanTouchController({
     controller.interaction.begin();
     const start = world(touches[0]);
     const hit =
-      mode === 'select' || mode === 'resize'
+      mode === "select" || mode === "resize"
         ? hitTest(start)
-        : mode === 'split' || mode === 'rejoin'
+        : mode === "split" || mode === "rejoin" || mode === "pin"
           ? wallAt(start)
           : null;
     if (hit) selection = { collection: hit.collection, id: hit.item.id };
@@ -253,18 +304,23 @@ export function createBuildingPlanTouchController({
       screenStart: touches[0],
       viewport: { ...viewport },
       touches: touches.length,
-      initialDistance: touches.length > 1 ? length(touches[0], touches[1]) : null,
+      initialDistance:
+        touches.length > 1 ? length(touches[0], touches[1]) : null,
       hit,
       moved: false,
     };
-    if (touches.length > 1 || mode === 'pan') gesture.pan = true;
+    if (touches.length > 1 || mode === "pan") gesture.pan = true;
     draft = null;
-    if ((mode === 'split' || mode === 'rejoin') && canEdit(hit))
-      draft = { type: 'cut', command: mode, placement: cutPlacement(start) };
+    if (mode === "pin" && hit && canEdit(hit))
+      draft = { type: "pin", wallId: hit.item.id };
+    if ((mode === "split" || mode === "rejoin") && canEdit(hit))
+      draft = { type: "cut", command: mode, placement: cutPlacement(start) };
     notify();
   }
   function cutPlacement(point) {
-    return controller[mode === 'split' ? 'getCutPlacement' : 'getJoinPlacement'](point, {
+    return controller[
+      mode === "split" ? "getCutPlacement" : "getJoinPlacement"
+    ](point, {
       roomId: scopeRoomId(),
       zoom: viewport.scale,
     });
@@ -274,6 +330,7 @@ export function createBuildingPlanTouchController({
     lastTouches = touches;
     const touch = touches[0];
     if (touches.length > 1 || gesture.pan) {
+      controller.clearPreview();
       if (touches.length > 1 && !gesture.initialDistance) {
         gesture.initialDistance = length(touches[0], touches[1]);
         gesture.viewport = { ...viewport };
@@ -285,8 +342,8 @@ export function createBuildingPlanTouchController({
               Math.min(
                 4,
                 (gesture.viewport.scale * length(touches[0], touches[1])) /
-                  Math.max(1, gesture.initialDistance)
-              )
+                  Math.max(1, gesture.initialDistance),
+              ),
             )
           : gesture.viewport.scale;
       viewport = {
@@ -299,37 +356,39 @@ export function createBuildingPlanTouchController({
       return;
     }
     let end = world(touch);
+    if (mode === "pin") return;
     gesture.moved ||= length(touch, gesture.screenStart) > 4;
-    if ((mode === 'split' || mode === 'rejoin') && canEdit(gesture.hit)) {
-      draft = { type: 'cut', command: mode, placement: cutPlacement(end) };
+    if ((mode === "split" || mode === "rejoin") && canEdit(gesture.hit)) {
+      draft = { type: "cut", command: mode, placement: cutPlacement(end) };
       notify();
       return;
     }
     if (!canEdit(gesture.hit) || !gesture.moved) return;
     if (
-      ['room', 'wall', 'beam'].includes(mode) ||
-      (mode === 'resize' && gesture.hit?.collection === 'rooms')
+      ["room", "wall", "beam"].includes(mode) ||
+      (mode === "resize" && gesture.hit?.collection === "rooms")
     )
       end = controller.interaction.snapPoint(end, {
         zoom: viewport.scale,
         roomId: gesture.hit?.item.roomId || gesture.hit?.item.id,
       });
-    if (mode === 'room')
+    if (mode === "room")
       draft = {
-        type: 'room',
+        type: "room",
         x: Math.min(gesture.start.x, end.x),
         y: Math.min(gesture.start.y, end.y),
         width: Math.abs(end.x - gesture.start.x),
         height: Math.abs(end.y - gesture.start.y),
       };
-    else if (mode === 'wall' || mode === 'beam') draft = { type: mode, start: gesture.start, end };
-    else if (gesture.hit?.collection === 'rooms') {
+    else if (mode === "wall" || mode === "beam")
+      draft = { type: mode, start: gesture.start, end };
+    else if (gesture.hit?.collection === "rooms") {
       const room = gesture.hit.item;
       draft = {
-        type: 'room-edit',
+        type: "room-edit",
         roomId: room.id,
         rect:
-          mode === 'resize'
+          mode === "resize"
             ? {
                 ...room.rect,
                 width: end.x - room.rect.x,
@@ -341,7 +400,7 @@ export function createBuildingPlanTouchController({
                 y: room.rect.y + end.y - gesture.start.y,
               },
       };
-      if (mode !== 'resize') {
+      if (mode !== "resize") {
         const points = room.vertices.map((point) => ({
           ...point,
           x: point.x + draft.rect.x - room.rect.x,
@@ -358,7 +417,7 @@ export function createBuildingPlanTouchController({
       controller.previewRoom(room.id, draft.rect);
     } else if (gesture.hit) {
       const edit = elementEdit(gesture, end);
-      draft = { type: 'element-edit', edit };
+      draft = { type: "element-edit", edit };
       applyElementEdit(edit, true);
     }
     notify();
@@ -376,66 +435,92 @@ export function createBuildingPlanTouchController({
     gesture = null;
     draft = null;
     if (current.pan) {
+      controller.clearPreview();
       notify();
       return;
     }
     try {
       if (!canEdit(current.hit)) {
         if (current.hit && !current.moved)
-          controller.focus(current.hit.collection, current.hit.item.id);
+          controller.focus(
+            current.hit.collection === "corners"
+              ? "rooms"
+              : current.hit.collection,
+            current.hit.collection === "corners"
+              ? current.hit.item.roomId
+              : current.hit.item.id,
+          );
         return;
       }
-      if (pending?.type === 'cut') {
+      if (pending?.type === "pin") controller.toggleWallPin(pending.wallId);
+      else if (pending?.type === "cut") {
         const target = pending.placement;
         if (target)
-          await (pending.command === 'split'
+          await (pending.command === "split"
             ? controller.splitWall(target.wallId, { offset: target.offset })
             : controller.rejoinCut(target.id));
-      } else if (pending?.type === 'room' && pending.width > 4 && pending.height > 4)
-        await created('rooms', controller.createRoom(pending));
-      else if (pending?.type === 'room-edit')
+      } else if (
+        pending?.type === "room" &&
+        pending.width > 4 &&
+        pending.height > 4
+      )
+        await created("rooms", controller.createRoom(pending));
+      else if (pending?.type === "room-edit")
         await controller.updateRoom(pending.roomId, pending.rect);
-      else if (pending?.type === 'wall' || pending?.type === 'beam') {
+      else if (pending?.type === "wall" || pending?.type === "beam") {
         const room = roomAt(pending.start);
         if (room && inside(pending.end, room.vertices)) {
-          if (pending.type === 'wall')
-            await created('walls', controller.createWall(room.id, [pending.start, pending.end]));
+          if (pending.type === "wall")
+            await created(
+              "walls",
+              controller.createWall(room.id, [pending.start, pending.end]),
+            );
           else
             await created(
-              'beams',
+              "beams",
               controller.createBeam(room.id, {
                 startU: (pending.start.x - room.rect.x) / room.rect.width,
                 startV: (pending.start.y - room.rect.y) / room.rect.height,
                 endU: (pending.end.x - room.rect.x) / room.rect.width,
                 endV: (pending.end.y - room.rect.y) / room.rect.height,
-              })
+              }),
             );
         }
-      } else if (pending?.type === 'element-edit') {
+      } else if (pending?.type === "element-edit") {
         await applyElementEdit(pending.edit, false);
-      } else if (mode === 'column') {
+      } else if (mode === "column") {
         const room = roomAt(current.start);
         if (room)
           await created(
-            'columns',
+            "columns",
             controller.createColumn(room.id, {
               centerU: (current.start.x - room.rect.x) / room.rect.width,
               centerV: (current.start.y - room.rect.y) / room.rect.height,
-            })
+            }),
           );
-      } else if (mode === 'door' || mode === 'window') {
+      } else if (mode === "door" || mode === "window") {
         const hit = wallAt(current.start);
         if (hit)
           await created(
-            mode === 'door' ? 'doors' : 'windows',
-            controller[mode === 'door' ? 'createDoor' : 'createWindow'](hit.item.id, {
-              segmentIndex: hit.segmentIndex,
-              startRatio: hit.ratio,
-              width: mode === 'door' ? 0.9 : 1.2,
-            })
+            mode === "door" ? "doors" : "windows",
+            controller[mode === "door" ? "createDoor" : "createWindow"](
+              hit.item.id,
+              {
+                segmentIndex: hit.segmentIndex,
+                startRatio: hit.ratio,
+                width: mode === "door" ? 0.9 : 1.2,
+              },
+            ),
           );
       } else if (current.hit && !current.moved)
-        controller.focus(current.hit.collection, current.hit.item.id);
+        controller.focus(
+          current.hit.collection === "corners"
+            ? "rooms"
+            : current.hit.collection,
+          current.hit.collection === "corners"
+            ? current.hit.item.roomId
+            : current.hit.item.id,
+        );
     } finally {
       controller.clearPreview();
       notify();
@@ -447,7 +532,13 @@ export function createBuildingPlanTouchController({
     end,
     isActive: () => Boolean(gesture),
     tick(bounds, now) {
-      if (!gesture || gesture.pan || !gesture.moved || !canEdit(gesture.hit) || !lastTouches.length)
+      if (
+        !gesture ||
+        gesture.pan ||
+        !gesture.moved ||
+        !canEdit(gesture.hit) ||
+        !lastTouches.length
+      )
         return;
       const delta = controller.interaction.edgePan(lastTouches[0], bounds, now);
       if (!delta.x && !delta.y) return;
@@ -476,5 +567,8 @@ export function createBuildingPlanTouchController({
     },
     getViewport: () => ({ ...viewport }),
     getSelection: () => selection,
+    setFreeCorners: (value) => {
+      freeCorners = Boolean(value);
+    },
   };
 }

@@ -1,10 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, PanResponder, TextInput, Alert } from 'react-native';
-import Svg, { G, Polygon, Polyline, Path, Line, Rect, Text as SvgText } from 'react-native-svg';
-import { BuildingPlanCanvasController } from 'form0-core';
-import { useTheme } from '../theme-context.jsx';
-import { Text } from '../typography.jsx';
-import { createBuildingPlanTouchController } from './touch-controller.js';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { View, Pressable, PanResponder, TextInput, Alert } from "react-native";
+import Svg, {
+  G,
+  Polygon,
+  Polyline,
+  Path,
+  Line,
+  Rect,
+  Text as SvgText,
+} from "react-native-svg";
+import { BuildingPlanCanvasController } from "form0-core";
+import { useTheme } from "../theme-context.jsx";
+import { Text } from "../typography.jsx";
+import { createBuildingPlanTouchController } from "./touch-controller.js";
 
 const EMPTY = {
   floors: [],
@@ -16,17 +24,18 @@ const EMPTY = {
   windows: [],
 };
 const TOOLS = [
-  ['select', 'Select'],
-  ['pan', 'Pan'],
-  ['resize', 'Resize'],
-  ['room', 'Room'],
-  ['wall', 'Wall'],
-  ['split', 'Split'],
-  ['rejoin', 'Rejoin'],
-  ['door', 'Door'],
-  ['window', 'Window'],
-  ['column', 'Column'],
-  ['beam', 'Beam'],
+  ["select", "Select"],
+  ["pan", "Pan"],
+  ["resize", "Resize"],
+  ["room", "Room"],
+  ["wall", "Wall"],
+  ["split", "Split"],
+  ["rejoin", "Rejoin"],
+  ["pin", "Pin / unpin"],
+  ["door", "Door"],
+  ["window", "Window"],
+  ["column", "Column"],
+  ["beam", "Beam"],
 ];
 
 /** Uses the same record transaction and ordinary row navigation as the form editor. */
@@ -47,8 +56,11 @@ export function BuildingPlanCanvas({
     selection: null,
     draft: null,
   });
+  const [freeCorners, setFreeCorners] = useState(false);
+  const freeCornersRef = useRef(freeCorners);
+  freeCornersRef.current = freeCorners;
   const [viewport, setViewport] = useState({ x: 20, y: 20, scale: 1 });
-  const [mode, setMode] = useState('select');
+  const [mode, setMode] = useState("select");
   const [width, setWidth] = useState(320);
   const [issues, setIssues] = useState([]);
   const [editingPolicy, setEditingPolicy] = useState({
@@ -57,8 +69,8 @@ export function BuildingPlanCanvas({
   });
   const policyRef = useRef(editingPolicy);
   policyRef.current = editingPolicy;
-  const [dimensions, setDimensions] = useState({ width: '', height: '' });
-  const [cutDistance, setCutDistance] = useState('');
+  const [dimensions, setDimensions] = useState({ width: "", height: "" });
+  const [cutDistance, setCutDistance] = useState("");
   const runtime = useRef(null);
   const frame = useRef(null);
   const edgeFrame = useRef(null);
@@ -72,24 +84,25 @@ export function BuildingPlanCanvas({
       confirmOpeningRemoval: (issue) =>
         new Promise((resolve) =>
           Alert.alert(
-            'Opening conflict',
-            `${issue.message}${issue.observationIds.length ? ` This also deletes ${issue.observationIds.length} associated observation(s).` : ''}`,
+            "Opening conflict",
+            `${issue.message}${issue.observationIds.length ? ` This also deletes ${issue.observationIds.length} associated observation(s).` : ""}`,
             [
               {
-                text: 'Keep previous layout',
-                style: 'cancel',
+                text: "Keep previous layout",
+                style: "cancel",
                 onPress: () => resolve(false),
               },
               {
-                text: 'Keep position and remove',
-                style: 'destructive',
+                text: "Keep position and remove",
+                style: "destructive",
                 onPress: () => resolve(true),
               },
             ],
-            { cancelable: true, onDismiss: () => resolve(false) }
-          )
+            { cancelable: true, onDismiss: () => resolve(false) },
+          ),
         ),
-      readRecord: () => current.current.context?.editor.getRecord() || current.current.record,
+      readRecord: () =>
+        current.current.context?.editor.getRecord() || current.current.record,
       writeRecord: (_next, { operation }) =>
         current.current.context?.editor.apply(operation, {
           scopeId: current.current.context.scopeId,
@@ -102,7 +115,7 @@ export function BuildingPlanCanvas({
     const selected = context?.editor.resolveRow(context.path);
     if (selected)
       controller.setActiveFloor(
-        controller.floors.findIndex((floor) => floor.id === selected.floorId)
+        controller.floors.findIndex((floor) => floor.id === selected.floorId),
       );
     const touch = createBuildingPlanTouchController({
       controller,
@@ -113,18 +126,19 @@ export function BuildingPlanCanvas({
         return (
           !current.current.readOnly &&
           Boolean(context) &&
-          (context.editor.resolveRow(context.path).node.nodeKey === 'rooms' ||
+          (context.editor.resolveRow(context.path).node.nodeKey === "rooms" ||
             !hit ||
-            hit.collection === 'rooms')
+            hit.collection === "rooms")
         );
       },
       scopeRoomId: () => {
         const context = current.current.context;
         if (!context) return null;
         const target = context.editor.resolveRow(context.path);
-        return target.node.nodeKey === 'rooms' ? target.model.id : null;
+        return target.node.nodeKey === "rooms" ? target.model.id : null;
       },
     });
+    touch.setFreeCorners(freeCornersRef.current);
     runtime.current = { controller, touch };
     if (context && context.focusPath?.length > context.path.length)
       current.current.onFocusRow?.(context.focusPath);
@@ -154,10 +168,12 @@ export function BuildingPlanCanvas({
     const raw = event.nativeEvent.touches?.length
       ? event.nativeEvent.touches
       : event.nativeEvent.changedTouches;
-    return (raw?.length ? Array.from(raw) : [event.nativeEvent]).map((touch) => ({
-      x: touch.locationX,
-      y: touch.locationY,
-    }));
+    return (raw?.length ? Array.from(raw) : [event.nativeEvent]).map(
+      (touch) => ({
+        x: touch.locationX,
+        y: touch.locationY,
+      }),
+    );
   };
   const responder = useMemo(() => {
     const stopEdgePan = () => {
@@ -206,22 +222,27 @@ export function BuildingPlanCanvas({
     });
   }, []);
   const selectedRoom =
-    interaction.selection?.collection === 'rooms'
+    interaction.selection?.collection === "rooms"
       ? scene.rooms.find((room) => room.id === interaction.selection.id)
       : null;
   const selectedWall =
-    interaction.selection?.collection === 'walls'
+    interaction.selection?.collection === "walls"
       ? scene.walls.find((wall) => wall.id === interaction.selection.id)
       : null;
   const selectedWallLength =
     selectedWall?.points.length === 2
       ? Math.hypot(
           selectedWall.points[1].x - selectedWall.points[0].x,
-          selectedWall.points[1].y - selectedWall.points[0].y
+          selectedWall.points[1].y - selectedWall.points[0].y,
         ) / 32
       : null;
+  const cornerRoomId =
+    context && context.editor.resolveRow(context.path).node.nodeKey === "rooms"
+      ? context.editor.resolveRow(context.path).model.id
+      : selectedRoom?.id || selectedWall?.roomId;
   useEffect(() => {
-    if (selectedWallLength != null) setCutDistance(String(selectedWallLength / 2));
+    if (selectedWallLength != null)
+      setCutDistance(String(selectedWallLength / 2));
   }, [selectedWall?.id, selectedWallLength]);
   useEffect(() => {
     if (selectedRoom)
@@ -245,9 +266,11 @@ export function BuildingPlanCanvas({
         borderWidth: 1,
         borderColor: theme.color.border,
         borderRadius: 6,
-        backgroundColor: selected ? theme.color.section : theme.color.background,
+        backgroundColor: selected
+          ? theme.color.section
+          : theme.color.background,
         opacity: disabled ? 0.45 : 1,
-        justifyContent: 'center',
+        justifyContent: "center",
       }}
     >
       <Text style={{ color: theme.color.foreground }}>{label}</Text>
@@ -260,8 +283,8 @@ export function BuildingPlanCanvas({
   const ghost = interaction.draft;
   return (
     <View style={{ marginBottom: 16, gap: 8 }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {onAddFloor && button('Add floor', onAddFloor, readOnly)}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {onAddFloor && button("Add floor", onAddFloor, readOnly)}
         {TOOLS.map(([id, label]) =>
           button(
             label,
@@ -269,61 +292,74 @@ export function BuildingPlanCanvas({
               setMode(id);
               runtime.current?.touch.setMode(id);
             },
-            id !== 'select' &&
-              id !== 'pan' &&
+            id !== "select" &&
+              id !== "pan" &&
               (readOnly ||
                 !context ||
-                (context.editor.resolveRow(context.path).node.nodeKey === 'floors'
-                  ? id !== 'room'
-                  : id === 'room')),
-            id === mode
-          )
+                (context.editor.resolveRow(context.path).node.nodeKey ===
+                "floors"
+                  ? id !== "room"
+                  : id === "room")),
+            id === mode,
+          ),
         )}
         {context &&
           button(
-            'Undo',
-            () => setIssues(context.editor.undo({ scopeId: context.scopeId }).issues),
-            readOnly || !context.editor.getState().canUndo
+            "Undo",
+            () =>
+              setIssues(
+                context.editor.undo({ scopeId: context.scopeId }).issues,
+              ),
+            readOnly || !context.editor.getState().canUndo,
           )}
         {context &&
           button(
-            'Redo',
-            () => setIssues(context.editor.redo({ scopeId: context.scopeId }).issues),
-            readOnly || !context.editor.getState().canRedo
+            "Redo",
+            () =>
+              setIssues(
+                context.editor.redo({ scopeId: context.scopeId }).issues,
+              ),
+            readOnly || !context.editor.getState().canRedo,
           )}
-        {button('Zoom in', () =>
+        {button("Zoom in", () =>
           runtime.current?.touch.setViewport({
             ...viewport,
             scale: Math.min(4, viewport.scale * 1.25),
-          })
+          }),
         )}
-        {button('Zoom out', () =>
+        {button("Zoom out", () =>
           runtime.current?.touch.setViewport({
             ...viewport,
             scale: Math.max(0.25, viewport.scale / 1.25),
-          })
+          }),
         )}
-        {button('Reset view', () => runtime.current?.touch.setViewport({ x: 20, y: 20, scale: 1 }))}
-        {['snapping', 'edgeAutoPan'].map((key) =>
+        {button("Reset view", () =>
+          runtime.current?.touch.setViewport({ x: 20, y: 20, scale: 1 }),
+        )}
+        {button(`Free drag: ${freeCorners ? "on" : "off"}`, () => {
+          setFreeCorners(!freeCorners);
+          runtime.current?.touch.setFreeCorners(!freeCorners);
+        })}
+        {["snapping", "edgeAutoPan"].map((key) =>
           button(
-            `${key === 'snapping' ? 'Magnetic alignment' : 'Edge auto-pan'}: ${editingPolicy[key] ? 'on' : 'off'}`,
+            `${key === "snapping" ? "Magnetic alignment" : "Edge auto-pan"}: ${editingPolicy[key] ? "on" : "off"}`,
             () =>
               setEditingPolicy((policy) => ({
                 ...policy,
                 [key]: !policy[key],
-              }))
-          )
+              })),
+          ),
         )}
       </View>
       {scene.floors.length > 1 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
           {scene.floors.map((floor, index) =>
             button(
               floor.label,
               () => runtime.current?.controller.setActiveFloor(index),
               Boolean(context),
-              index === scene.activeFloorIndex
-            )
+              index === scene.activeFloorIndex,
+            ),
           )}
         </View>
       )}
@@ -342,18 +378,27 @@ export function BuildingPlanCanvas({
           borderWidth: 1,
           borderColor: theme.color.border,
           backgroundColor: theme.color.background,
-          overflow: 'hidden',
+          overflow: "hidden",
         }}
       >
-        <Svg width={width} height={320} pointerEvents="none" viewBox={`0 0 ${width} 320`}>
-          <G transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
+        <Svg
+          width={width}
+          height={320}
+          pointerEvents="none"
+          viewBox={`0 0 ${width} 320`}
+        >
+          <G
+            transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
+          >
             {scene.rooms.map((room) => (
               <G key={room.id}>
                 <Polygon
-                  points={room.vertices.map((p) => `${p.x},${p.y}`).join(' ')}
+                  points={room.vertices.map((p) => `${p.x},${p.y}`).join(" ")}
                   fill={room.color}
                   stroke={
-                    interaction.selection?.id === room.id ? theme.color.primary : theme.color.border
+                    interaction.selection?.id === room.id
+                      ? theme.color.primary
+                      : theme.color.border
                   }
                   strokeWidth={2 / viewport.scale}
                 />
@@ -373,10 +418,11 @@ export function BuildingPlanCanvas({
                 d={scene.wallFootprints
                   .flatMap((wall) =>
                     wall.polygons.map(
-                      (polygon) => `M${polygon.map((p) => `${p.x},${p.y}`).join(' L')} Z`
-                    )
+                      (polygon) =>
+                        `M${polygon.map((p) => `${p.x},${p.y}`).join(" L")} Z`,
+                    ),
                   )
-                  .join(' ')}
+                  .join(" ")}
                 fill={theme.color.foreground}
               />
             )}
@@ -385,7 +431,9 @@ export function BuildingPlanCanvas({
                 {wall.schematicSegments.map((segment) => (
                   <Polyline
                     key={segment.id}
-                    points={segment.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                    points={segment.points
+                      .map((p) => `${p.x},${p.y}`)
+                      .join(" ")}
                     fill="none"
                     stroke={theme.color.foreground}
                     strokeDasharray="4 3"
@@ -395,17 +443,53 @@ export function BuildingPlanCanvas({
               </G>
             ))}
             {scene.walls
-              .filter((wall) => !scene.wallFootprints || interaction.selection?.id === wall.id)
+              .filter(
+                (wall) =>
+                  !scene.wallFootprints ||
+                  interaction.selection?.id === wall.id,
+              )
               .map((wall) => (
                 <Polyline
                   key={wall.id}
-                  points={wall.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  points={wall.points.map((p) => `${p.x},${p.y}`).join(" ")}
                   fill="none"
                   stroke={theme.color.primary}
                   strokeWidth={2 / viewport.scale}
                 />
               ))}
-            {mode === 'select' && selectedWallLength != null && (
+            {mode === "select" &&
+              !readOnly &&
+              (scene.corners || [])
+                .filter((corner) => corner.roomId === cornerRoomId)
+                .map((corner) => (
+                  <Rect
+                    key={`corner-${corner.id}`}
+                    x={corner.point.x - 4 / viewport.scale}
+                    y={corner.point.y - 4 / viewport.scale}
+                    width={8 / viewport.scale}
+                    height={8 / viewport.scale}
+                    fill={theme.color.background}
+                    stroke={theme.color.primary}
+                    strokeWidth={1.5 / viewport.scale}
+                  />
+                ))}
+            {scene.walls
+              .filter((wall) => wall.pinned)
+              .map((wall) => (
+                <SvgText
+                  key={`pin-${wall.id}`}
+                  x={(wall.points[0].x + wall.points.at(-1).x) / 2}
+                  y={
+                    (wall.points[0].y + wall.points.at(-1).y) / 2 -
+                    8 / viewport.scale
+                  }
+                  fontSize={11 / viewport.scale}
+                  fill={theme.color.primary}
+                >
+                  Pinned
+                </SvgText>
+              ))}
+            {mode === "select" && selectedWallLength != null && (
               <SvgText
                 x={selectedWall.points[0].x + 6 / viewport.scale}
                 y={selectedWall.points[0].y - 6 / viewport.scale}
@@ -417,13 +501,17 @@ export function BuildingPlanCanvas({
             )}
             {[
               ...(scene.editingCuts || []),
-              ...(ghost?.type === 'cut' && ghost.placement ? [ghost.placement] : []),
+              ...(ghost?.type === "cut" && ghost.placement
+                ? [ghost.placement]
+                : []),
             ]
               .filter(
                 (cut) =>
                   !context ||
-                  context.editor.resolveRow(context.path).node.nodeKey !== 'rooms' ||
-                  cut.roomId === context.editor.resolveRow(context.path).model.id
+                  context.editor.resolveRow(context.path).node.nodeKey !==
+                    "rooms" ||
+                  cut.roomId ===
+                    context.editor.resolveRow(context.path).model.id,
               )
               .map((cut, index) => (
                 <Rect
@@ -438,7 +526,9 @@ export function BuildingPlanCanvas({
                 />
               ))}
             {scene.columns.map((column) => {
-              const room = scene.rooms.find((room) => room.id === column.roomId);
+              const room = scene.rooms.find(
+                (room) => room.id === column.roomId,
+              );
               const center = point(room, column.centerU, column.centerV);
               return (
                 <Rect
@@ -463,7 +553,7 @@ export function BuildingPlanCanvas({
                 strokeDasharray="5,4"
               />
             ))}
-            {ghost?.type === 'cut' && ghost.placement?.guide && (
+            {ghost?.type === "cut" && ghost.placement?.guide && (
               <Line
                 x1={ghost.placement.guide.from.x}
                 y1={ghost.placement.guide.from.y}
@@ -491,11 +581,11 @@ export function BuildingPlanCanvas({
               );
             })}
             {scene.physicalOpenings?.map((opening) => {
-              const color = opening.kind === 'doors' ? '#2b8a3e' : '#1c7ed6';
+              const color = opening.kind === "doors" ? "#2b8a3e" : "#1c7ed6";
               return opening.polygon.length ? (
                 <Polygon
                   key={opening.id}
-                  points={opening.polygon.map((p) => `${p.x},${p.y}`).join(' ')}
+                  points={opening.polygon.map((p) => `${p.x},${p.y}`).join(" ")}
                   fill={color}
                 />
               ) : (
@@ -511,7 +601,7 @@ export function BuildingPlanCanvas({
                 />
               );
             })}
-            {ghost?.type === 'room' && (
+            {ghost?.type === "room" && (
               <Rect
                 x={ghost.x}
                 y={ghost.y}
@@ -522,7 +612,7 @@ export function BuildingPlanCanvas({
                 strokeDasharray="5 3"
               />
             )}
-            {(ghost?.type === 'wall' || ghost?.type === 'beam') && (
+            {(ghost?.type === "wall" || ghost?.type === "beam") && (
               <Line
                 x1={ghost.start.x}
                 y1={ghost.start.y}
@@ -536,12 +626,14 @@ export function BuildingPlanCanvas({
         </Svg>
       </View>
       {selectedRoom && !readOnly && context && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <TextInput
             accessibilityLabel="Room width in metres"
             keyboardType="decimal-pad"
             value={dimensions.width}
-            onChangeText={(value) => setDimensions((current) => ({ ...current, width: value }))}
+            onChangeText={(value) =>
+              setDimensions((current) => ({ ...current, width: value }))
+            }
             style={{
               minWidth: 64,
               minHeight: 44,
@@ -555,7 +647,9 @@ export function BuildingPlanCanvas({
             accessibilityLabel="Room height in metres"
             keyboardType="decimal-pad"
             value={dimensions.height}
-            onChangeText={(value) => setDimensions((current) => ({ ...current, height: value }))}
+            onChangeText={(value) =>
+              setDimensions((current) => ({ ...current, height: value }))
+            }
             style={{
               minWidth: 64,
               minHeight: 44,
@@ -565,21 +659,21 @@ export function BuildingPlanCanvas({
               padding: 8,
             }}
           />
-          {button('Set dimensions', () =>
+          {button("Set dimensions", () =>
             runtime.current?.controller.updateRoom(selectedRoom.id, {
               ...selectedRoom.rect,
-              width: Number(dimensions.width.replace(',', '.')) * 32,
-              height: Number(dimensions.height.replace(',', '.')) * 32,
-            })
+              width: Number(dimensions.width.replace(",", ".")) * 32,
+              height: Number(dimensions.height.replace(",", ".")) * 32,
+            }),
           )}
         </View>
       )}
-      {mode === 'select' &&
+      {mode === "select" &&
         selectedWallLength != null &&
         !readOnly &&
         context &&
-        context.editor.resolveRow(context.path).node.nodeKey === 'rooms' && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        context.editor.resolveRow(context.path).node.nodeKey === "rooms" && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <TextInput
               accessibilityLabel="Split distance (m)"
               keyboardType="decimal-pad"
@@ -594,19 +688,25 @@ export function BuildingPlanCanvas({
                 padding: 8,
               }}
             />
-            {button('Split at distance', () =>
+            {button("Split at distance", () =>
               runtime.current?.controller.splitWall(selectedWall.id, {
-                offset: Number(cutDistance.replace(',', '.')),
-              })
+                offset: Number(cutDistance.replace(",", ".")),
+              }),
             )}
           </View>
         )}
-      {mode === 'split' && (
+      {mode === "split" && (
         <Text>
-          Tap a wall to split it. Select a wall in Select mode to enter an exact distance.
+          Tap a wall to split it. Select a wall in Select mode to enter an exact
+          distance.
         </Text>
       )}
-      {mode === 'rejoin' && <Text>Tap an editing node to rejoin aligned portions.</Text>}
+      {mode === "rejoin" && (
+        <Text>Tap an editing node to rejoin aligned portions.</Text>
+      )}
+      {mode === "pin" && (
+        <Text>Tap a wall to pin or unpin it, then return to Select.</Text>
+      )}
       {issues.length > 0 && (
         <Text accessibilityRole="alert" style={{ color: theme.color.error }}>
           {issues[0].message}
