@@ -570,3 +570,47 @@ for (const remove of [false, true])
       remove ? 0 : 1,
     );
   });
+
+for (const preserveWallGrouping of [false, true])
+  test(`touch axis edits carry a return across separate physical subjects (${preserveWallGrouping})`, async () => {
+    const f = fixture(true);
+    f.controller.setEditingPolicy({ preserveWallGrouping });
+    f.touch.setViewport({ x: 0, y: 0, scale: 1 });
+    f.touch.setFreeCorners(true);
+    for (const [from, to] of [
+      [
+        { x: 120, y: 84 },
+        { x: 120, y: 80 },
+      ],
+      [
+        { x: 60, y: 120 },
+        { x: 48, y: 120 },
+      ],
+    ]) {
+      const record = f.record(),
+        commits = f.commits();
+      f.touch.begin([from]);
+      f.touch.move([{ x: to.x + (to.x - from.x), y: to.y + (to.y - from.y) }]);
+      f.touch.move([to]);
+      assert.deepEqual(f.record(), record);
+      assert.equal(f.commits(), commits);
+      await f.touch.end([to]);
+      assert.equal(f.commits(), commits + 1);
+    }
+    const view = f.controller.getSnapshot();
+    assert.ok(
+      view.rooms[0].vertices.some(
+        (v) => Math.abs(v.x - 44) < 1e-6 && Math.abs(v.y - 76) < 1e-6,
+      ),
+    );
+    for (const point of [
+      { x: 42, y: 78 },
+      { x: 56, y: 82 },
+    ])
+      assert.ok(
+        !view.wallFootprints.some((w) =>
+          w.polygons.some((p) => contains(point, p)),
+        ),
+      );
+    f.controller.dispose();
+  });
